@@ -20,18 +20,14 @@ const fmt = (n) => n ? '₹' + Math.round(parseFloat(n)).toLocaleString('en-IN')
 
 // Must match ksr.projects_status_check constraint values
 const STATUS_STYLES = {
-  preliminary: { background:'#f1f5f9', color:'#475569' },
   active:      { background:'#dcfce7', color:'#166534' },
   on_hold:     { background:'#fef3c7', color:'#92400e' },
   completed:   { background:'#dbeafe', color:'#1e40af' },
-  sold_out:    { background:'#e0e7ff', color:'#3730a3' },
 }
 const STATUS_LABELS = {
-  preliminary: 'Preliminary',
   active: 'Active',
   on_hold: 'On Hold',
   completed: 'Completed',
-  sold_out: 'Sold Out',
 }
 
 const S = {

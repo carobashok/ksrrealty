@@ -58,6 +58,7 @@ export default function NewBooking() {
         .select(
           'id, name, guideline_value_sqft, sale_rate_per_sqft, unit_of_measure, is_jv, incentive_amount_per_plot, reg_charge_pct, document_charge_amount'
         )
+        .eq('status', 'active')
         .order('name');
       if (error) throw error;
       return data;
