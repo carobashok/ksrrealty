@@ -432,9 +432,18 @@ export default function Projects() {
                 )}
 
                 <div style={{display:'flex',gap:'6px',background:'#f8fafc',borderRadius:'8px',padding:'8px',marginBottom:'12px'}}>
-                  {[['Total',plotCounts[proj.id] ?? proj.total_plots ?? 0],['Saleable',proj.saleable_area_sqft?`${(proj.saleable_area_sqft/1000).toFixed(1)}k sqft`:'—']].map(([l,v])=>(
+                  {(() => {
+                    const added = plotCounts[proj.id] ?? 0
+                    const planned = proj.total_plots
+                    const plotsLabel = planned ? 'Plots Added' : 'Total'
+                    const plotsValue = planned ? `${added} / ${planned}` : added
+                    return [
+                      [plotsLabel, plotsValue],
+                      ['Saleable', proj.saleable_area_sqft ? `${(proj.saleable_area_sqft/1000).toFixed(1)}k sqft` : '—'],
+                    ]
+                  })().map(([l,v])=>(
                     <div key={l} style={S.stat}>
-                      <div style={S.statN}>{v}</div>
+                      <div style={{...S.statN, fontSize: String(v).includes('/') ? '16px' : '20px'}}>{v}</div>
                       <div style={S.statL}>{l}</div>
                     </div>
                   ))}
