@@ -1065,6 +1065,28 @@ export default function ProjectDetail() {
     },
   })
 
+  // Must match ksr.projects_status_check constraint values
+  const STATUS_STYLES = {
+    preliminary: { background:'#f1f5f9', color:'#475569' },
+    active:      { background:'#dcfce7', color:'#166534' },
+    on_hold:     { background:'#fef3c7', color:'#92400e' },
+    completed:   { background:'#dbeafe', color:'#1e40af' },
+    sold_out:    { background:'#e0e7ff', color:'#3730a3' },
+  }
+  const STATUS_LABELS = {
+    preliminary: 'Preliminary', active: 'Active', on_hold: 'On Hold',
+    completed: 'Completed', sold_out: 'Sold Out',
+  }
+
+  const changeStatus = useMutation({
+    mutationFn: async (newStatus) => {
+      const { error } = await supabase.from('projects').update({ status: newStatus }).eq('id', projectId)
+      if (error) throw error
+    },
+    onSuccess: () => { toast.success('Status updated'); qc.invalidateQueries(['project', projectId]) },
+    onError: (e) => toast.error(e.message),
+  })
+
   if (isLoading) return <div style={{padding:'40px',textAlign:'center',color:'#94a3b8'}}>Loading...</div>
   if (!proj) return <div style={{padding:'40px',textAlign:'center',color:'#ef4444'}}>Project not found.</div>
 
@@ -1078,7 +1100,16 @@ export default function ProjectDetail() {
           <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
             <h1 style={{fontSize:'20px',fontWeight:700,color:'#1B2A4A',margin:0}}>{proj.name}</h1>
             {proj.is_jv && <span style={{padding:'2px 8px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:'#fef3c7',color:'#92400e'}}>JV</span>}
-            <span style={{padding:'2px 8px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:'#dcfce7',color:'#166534'}}>{proj.status}</span>
+            <select
+              value={proj.status}
+              onChange={e => changeStatus.mutate(e.target.value)}
+              disabled={changeStatus.isPending}
+              style={{padding:'2px 8px',borderRadius:'20px',fontSize:'11px',fontWeight:600,border:'none',cursor:'pointer',...(STATUS_STYLES[proj.status]||STATUS_STYLES.active)}}
+            >
+              {Object.keys(STATUS_LABELS).map(s => (
+                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+              ))}
+            </select>
           </div>
           <div style={{fontSize:'13px',color:'#64748b',marginTop:'2px'}}>
             {[proj.region, proj.location, proj.taluk, proj.district].filter(Boolean).join(' · ')}

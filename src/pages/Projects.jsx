@@ -18,6 +18,22 @@ const REGIONS = Object.keys(REGION_UNITS)
 /*const fmt = (n) => n ? '₹' + parseFloat(n).toLocaleString('en-IN') : '—'*/
 const fmt = (n) => n ? '₹' + Math.round(parseFloat(n)).toLocaleString('en-IN') : '—'
 
+// Must match ksr.projects_status_check constraint values
+const STATUS_STYLES = {
+  preliminary: { background:'#f1f5f9', color:'#475569' },
+  active:      { background:'#dcfce7', color:'#166534' },
+  on_hold:     { background:'#fef3c7', color:'#92400e' },
+  completed:   { background:'#dbeafe', color:'#1e40af' },
+  sold_out:    { background:'#e0e7ff', color:'#3730a3' },
+}
+const STATUS_LABELS = {
+  preliminary: 'Preliminary',
+  active: 'Active',
+  on_hold: 'On Hold',
+  completed: 'Completed',
+  sold_out: 'Sold Out',
+}
+
 const S = {
   page:    { padding:'24px', fontFamily:'Segoe UI,sans-serif' },
   header:  { display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'24px' },
@@ -26,7 +42,7 @@ const S = {
   btn:     { display:'flex', alignItems:'center', gap:'6px', padding:'8px 16px', background:'#1B2A4A', color:'white', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:600, cursor:'pointer' },
   grid:    { display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:'16px' },
   card:    { background:'white', borderRadius:'10px', padding:'20px', boxShadow:'0 1px 4px #0001', border:'1px solid #e2e8f0' },
-  badge:   (c) => ({ display:'inline-block', padding:'2px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:600, background:c==='active'?'#dcfce7':'#dbeafe', color:c==='active'?'#166534':'#1e40af' }),
+  badge:   (c) => ({ display:'inline-block', padding:'2px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:600, ...(STATUS_STYLES[c] || STATUS_STYLES.active) }),
   jvBadge: { display:'inline-block', padding:'2px 8px', borderRadius:'20px', fontSize:'11px', fontWeight:600, background:'#fef3c7', color:'#92400e' },
   stat:    { textAlign:'center', flex:1 },
   statN:   { fontSize:'20px', fontWeight:700, color:'#1B2A4A' },
@@ -124,7 +140,7 @@ function NewProjectModal({ onClose }) {
         landowner_rate_per_sqft: form.landowner_rate_per_sqft ? parseFloat(form.landowner_rate_per_sqft) : null,
         total_plots: form.total_plots ? parseInt(form.total_plots) : null,
         is_jv: form.is_jv,
-        status: 'active',
+        status: 'on_hold', // new projects start on hold until verified, then made active
       }).select().single()
       if (error) throw error
 
@@ -359,7 +375,7 @@ export default function Projects() {
                     </div>
                   </div>
                   <div style={{display:'flex',gap:'4px',flexWrap:'wrap',justifyContent:'flex-end'}}>
-                    <span style={S.badge(proj.status)}>{proj.status}</span>
+                    <span style={S.badge(proj.status)}>{STATUS_LABELS[proj.status] || proj.status}</span>
                     {proj.is_jv && <span style={S.jvBadge}>JV</span>}
                   </div>
                 </div>
