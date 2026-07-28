@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
-import { Plus, Building2, Map, ChevronRight, X, Trash2 } from 'lucide-react'
+import { Plus, Building2, Map, ChevronRight, X, Trash2, Search } from 'lucide-react'
 
 const CENTS_TO_SQFT = 435.6
 const ACRES_TO_SQFT = 43560
@@ -305,6 +305,8 @@ function NewProjectModal({ onClose }) {
 
 export default function Projects() {
   const [showNew, setShowNew] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('All')
 
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects'],
@@ -350,16 +352,56 @@ export default function Projects() {
         <button style={S.btn} onClick={() => setShowNew(true)}><Plus size={15}/> New Project</button>
       </div>
 
-      {isLoading ? (
+      <div style={{display:'flex',gap:'10px',marginBottom:'16px',flexWrap:'wrap'}}>
+        <div style={{position:'relative',flex:1,minWidth:'220px'}}>
+          <Search size={16} style={{position:'absolute',left:'10px',top:'50%',transform:'translateY(-50%)',color:'#94a3b8'}}/>
+          <input
+            type="text"
+            placeholder="Search by name, region, or location..."
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            style={{width:'100%',padding:'8px 10px 8px 32px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',boxSizing:'border-box'}}
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={e=>setStatusFilter(e.target.value)}
+          style={{padding:'8px 10px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',background:'white'}}
+        >
+          <option value="All">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="on_hold">On Hold</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+
+      {(() => {
+        const q = search.toLowerCase()
+        const filteredProjects = (projects || []).filter(p => {
+          const matchesStatus = statusFilter === 'All' || p.status === statusFilter
+          const matchesSearch = !q ||
+            p.name?.toLowerCase().includes(q) ||
+            p.region?.toLowerCase().includes(q) ||
+            p.location?.toLowerCase().includes(q) ||
+            p.taluk?.toLowerCase().includes(q) ||
+            p.district?.toLowerCase().includes(q)
+          return matchesStatus && matchesSearch
+        })
+        return isLoading ? (
         <div style={S.empty}>Loading...</div>
       ) : !projects?.length ? (
         <div style={S.empty}>
           <Building2 size={40} style={{margin:'0 auto 12px',display:'block',opacity:0.3}}/>
           <p style={{fontWeight:600,color:'#475569'}}>No projects yet</p>
         </div>
+      ) : !filteredProjects.length ? (
+        <div style={S.empty}>
+          <Search size={40} style={{margin:'0 auto 12px',display:'block',opacity:0.3}}/>
+          <p style={{fontWeight:600,color:'#475569'}}>No projects match your search</p>
+        </div>
       ) : (
         <div style={S.grid}>
-          {projects.map(proj => {
+          {filteredProjects.map(proj => {
             const isCents = proj.unit_of_measure === 'cents'
             return (
               <div key={proj.id} style={S.card}>
@@ -410,7 +452,8 @@ export default function Projects() {
             )
           })}
         </div>
-      )}
+      )
+      })()}
     </div>
   )
 }

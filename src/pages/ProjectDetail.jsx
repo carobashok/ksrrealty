@@ -148,6 +148,7 @@ function RatesSection({ proj, projectId, qc }) {
 function DetailsSection({ proj, projectId, qc }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({
+    name: proj.name || '',
     region: proj.region || '',
     unit_of_measure: proj.unit_of_measure || 'sqft',
     location: proj.location || '',
@@ -172,7 +173,9 @@ function DetailsSection({ proj, projectId, qc }) {
 
   const save = useMutation({
     mutationFn: async () => {
+      if (!form.name.trim()) throw new Error('Project name is required')
       const { error } = await supabase.from('projects').update({
+        name: form.name.trim(),
         region: form.region || null,
         unit_of_measure: form.unit_of_measure,
         location: form.location || null,
@@ -203,6 +206,7 @@ function DetailsSection({ proj, projectId, qc }) {
       }>
       {!editing ? (
         <>
+          <Row label="Project Name" value={proj.name} />
           <Row label="Region" value={proj.region} />
           <Row label="Unit of Measure" value={proj.unit_of_measure === 'cents' ? 'Cents' : 'Sq.ft'} />
           <Row label="Joint Venture (JV)" value={proj.is_jv ? '✅ Yes' : 'No'} />
@@ -218,6 +222,11 @@ function DetailsSection({ proj, projectId, qc }) {
         </>
       ) : (
         <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+          {/* Project Name */}
+          <div>
+            <div style={{...lbl,marginBottom:'4px'}}>Project Name</div>
+            <input style={inp} value={form.name} onChange={e=>set('name',e.target.value)} />
+          </div>
           {/* Region + Unit */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
             <div>
