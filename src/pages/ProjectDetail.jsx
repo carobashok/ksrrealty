@@ -63,10 +63,10 @@ function RatesSection({ proj, projectId, qc }) {
 
   const set = (k, v) => setForm(f => {
     const u = { ...f, [k]: v }
-    if (k === 'sale_rate_per_cent' && v) u.sale_rate_per_sqft = (parseFloat(v) / CENTS_TO_SQFT).toFixed(2)
-    if (k === 'sale_rate_per_sqft' && v) u.sale_rate_per_cent = (parseFloat(v) * CENTS_TO_SQFT).toFixed(2)
-    if (k === 'landowner_rate_per_cent' && v) u.landowner_rate_per_sqft = (parseFloat(v) / CENTS_TO_SQFT).toFixed(2)
-    if (k === 'landowner_rate_per_sqft' && v) u.landowner_rate_per_cent = (parseFloat(v) * CENTS_TO_SQFT).toFixed(2)
+    if (k === 'sale_rate_per_cent' && v) u.sale_rate_per_sqft = Math.round((parseFloat(v) / CENTS_TO_SQFT) / 50) * 50
+    if (k === 'sale_rate_per_sqft' && v) u.sale_rate_per_cent = Math.round((parseFloat(v) * CENTS_TO_SQFT) / 100) * 100
+    if (k === 'landowner_rate_per_cent' && v) u.landowner_rate_per_sqft = Math.round((parseFloat(v) / CENTS_TO_SQFT) / 50) * 50
+    if (k === 'landowner_rate_per_sqft' && v) u.landowner_rate_per_cent = Math.round((parseFloat(v) * CENTS_TO_SQFT) / 100) * 100
     return u
   })
 

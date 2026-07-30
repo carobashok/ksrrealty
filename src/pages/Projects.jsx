@@ -86,10 +86,10 @@ function NewProjectModal({ onClose }) {
     if (k === 'total_area_sqft' && v) u.total_area_acres = (parseFloat(v) / ACRES_TO_SQFT).toFixed(4)
     /*if (k === 'guideline_value_sqft' && v) u.guideline_value_cent = (parseFloat(v) * CENTS_TO_SQFT).toFixed(2)
     if (k === 'guideline_value_cent' && v) u.guideline_value_sqft = (parseFloat(v) / CENTS_TO_SQFT).toFixed(2)*/
-    if (k === 'sale_rate_per_cent' && v) u.sale_rate_per_sqft = (parseFloat(v) / CENTS_TO_SQFT).toFixed(2)
-    if (k === 'sale_rate_per_sqft' && v) u.sale_rate_per_cent = (parseFloat(v) * CENTS_TO_SQFT).toFixed(2)
-    if (k === 'landowner_rate_per_cent' && v) u.landowner_rate_per_sqft = (parseFloat(v) / CENTS_TO_SQFT).toFixed(2)
-    if (k === 'landowner_rate_per_sqft' && v) u.landowner_rate_per_cent = (parseFloat(v) * CENTS_TO_SQFT).toFixed(2)
+    if (k === 'sale_rate_per_cent' && v) u.sale_rate_per_sqft = Math.round((parseFloat(v) / CENTS_TO_SQFT) / 50) * 50
+    if (k === 'sale_rate_per_sqft' && v) u.sale_rate_per_cent = Math.round((parseFloat(v) * CENTS_TO_SQFT) / 100) * 100
+    if (k === 'landowner_rate_per_cent' && v) u.landowner_rate_per_sqft = Math.round((parseFloat(v) / CENTS_TO_SQFT) / 50) * 50
+    if (k === 'landowner_rate_per_sqft' && v) u.landowner_rate_per_cent = Math.round((parseFloat(v) * CENTS_TO_SQFT) / 100) * 100
     return u
   })
 
@@ -323,17 +323,22 @@ export default function Projects() {
   // Live plot counts per project — source of truth is the actual `plots`
   // table, not the manually-typed total_plots field on the project, which
   // can drift out of sync (e.g. plots added later, imports, deletions).
-  const { data: plotCounts = {} } = useQuery({
+  const { data: plotStats = {} } = useQuery({
     queryKey: ['plot-counts-by-project'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('plots').select('project_id').eq('plot_type', 'plot')
+      const { data, error } = await supabase.from('plots').select('project_id, polygon_coords').eq('plot_type', 'plot')
       if (error) throw error
-      return data.reduce((acc, p) => {
-        acc[p.project_id] = (acc[p.project_id] || 0) + 1
-        return acc
-      }, {})
+      const counts = {}
+      const hasDrawing = {}
+      for (const p of data) {
+        counts[p.project_id] = (counts[p.project_id] || 0) + 1
+        if (Array.isArray(p.polygon_coords) && p.polygon_coords.length > 0) hasDrawing[p.project_id] = true
+      }
+      return { counts, hasDrawing }
     },
   })
+  const plotCounts = plotStats.counts || {}
+  const hasDrawing = plotStats.hasDrawing || {}
 
   const stats = (proj) => ({
     total: plotCounts[proj.id] ?? proj.total_plots ?? 0,
@@ -420,8 +425,8 @@ export default function Projects() {
 
                 <div style={{fontSize:'11px',color:'#94a3b8',marginBottom:'10px'}}>
                   {proj.unit_of_measure === 'cents' ? 'Cents' : 'Sq.ft'}
-                  {proj.sale_rate_per_cent && ` · Sale: ${fmt(proj.sale_rate_per_cent)}/Cent`}
-                  {!proj.sale_rate_per_cent && proj.sale_rate_per_sqft && ` · Sale: ${fmt(proj.sale_rate_per_sqft)}/Sq.ft`}
+                  {proj.unit_of_measure === 'cents' && proj.sale_rate_per_cent && ` · Sale: ${fmt(proj.sale_rate_per_cent)}/Cent`}
+                  {proj.unit_of_measure !== 'cents' && proj.sale_rate_per_sqft && ` · Sale: ${fmt(proj.sale_rate_per_sqft)}/Sq.ft`}
                   {proj.guideline_value_sqft && ` · GLV: ${fmt(proj.guideline_value_sqft)}/Sq.ft`}
                 </div>
 
@@ -450,9 +455,19 @@ export default function Projects() {
                 </div>
 
                 <div style={S.actions}>
-                  <Link to={`/projects/${proj.id}/inventory`} style={{flex:1,textDecoration:'none'}}>
-                    <button style={{...S.actP,width:'100%'}}><Map size={13}/> Inventory</button>
-                  </Link>
+                  {hasDrawing[proj.id] ? (
+                    <Link to={`/projects/${proj.id}/inventory`} style={{flex:1,textDecoration:'none'}}>
+                      <button style={{...S.actP,width:'100%'}}><Map size={13}/> Inventory</button>
+                    </Link>
+                  ) : (
+                    <button
+                      disabled
+                      title="No drawing uploaded yet for this project"
+                      style={{...S.actP,width:'100%',flex:1,opacity:0.4,cursor:'not-allowed'}}
+                    >
+                      <Map size={13}/> Inventory
+                    </button>
+                  )}
                   <Link to={`/projects/${proj.id}`} style={{flex:1,textDecoration:'none'}}>
                     <button style={{...S.actS,width:'100%'}}>Details <ChevronRight size={13}/></button>
                   </Link>
