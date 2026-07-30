@@ -129,7 +129,11 @@ export default function Employees() {
       toast.error('Role is required');
       return;
     }
-    saveMutation.mutate({ ...form, reporting_to: form.reporting_to || null });
+    saveMutation.mutate({
+      ...form,
+      employee_code: form.employee_code.trim() || null,
+      reporting_to: form.reporting_to || null,
+    });
   };
 
   const filtered = employees.filter((e) => {

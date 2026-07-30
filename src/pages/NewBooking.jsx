@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { Search, X, Plus } from 'lucide-react';
 
 const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Other'];
+const CENTS_TO_SQFT = 435.6;
 // Must exactly match the DB check constraint on payments.mode
 const PAYMENT_MODES = [
   { value: 'cash', label: 'Cash' },
@@ -32,6 +33,7 @@ export default function NewBooking() {
   const [registrant, setRegistrant] = useState({ name: '', relation: '', pan: '', aadhaar: '' });
 
   const [agreedRate, setAgreedRate] = useState('');
+  const [agreedRateCent, setAgreedRateCent] = useState('');
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountApprovedBy, setDiscountApprovedBy] = useState('');
   const [discountNotes, setDiscountNotes] = useState('');
@@ -56,7 +58,7 @@ export default function NewBooking() {
         .schema('ksr')
         .from('projects')
         .select(
-          'id, name, guideline_value_sqft, sale_rate_per_sqft, unit_of_measure, is_jv, incentive_amount_per_plot, reg_charge_pct, document_charge_amount'
+          'id, name, guideline_value_sqft, sale_rate_per_sqft, sale_rate_per_cent, unit_of_measure, is_jv, incentive_amount_per_plot, reg_charge_pct, document_charge_amount, landowner_rate_per_cent'
         )
         .eq('status', 'active')
         .order('name');
@@ -183,8 +185,19 @@ export default function NewBooking() {
   const selectedPlot = plots.find((p) => p.id === plotId);
   const selectedCustomer = customerResults.find((c) => c.id === customerId);
 
-  // Prefill agreed rate when plot changes
-  const effectiveRate = agreedRate === '' ? selectedPlot?.base_price_sqft ?? 0 : Number(agreedRate);
+  const isCentsProject = selectedProject?.unit_of_measure === 'cents';
+
+  // Prefill agreed rate when plot changes.
+  // For Cents-based projects, the rate is entered per-Cent and converted to
+  // ₹/Sq.ft at FULL precision here — never pre-rounded — so Land Cost stays
+  // exact even though the ₹/Sq.ft equivalent looks like a decimal.
+  const effectiveRateCent =
+    agreedRateCent === '' ? Number(selectedProject?.sale_rate_per_cent) || 0 : Number(agreedRateCent);
+  const effectiveRate = isCentsProject
+    ? effectiveRateCent / CENTS_TO_SQFT
+    : agreedRate === ''
+    ? selectedPlot?.base_price_sqft ?? 0
+    : Number(agreedRate);
 
   // ---- Calculations ----
   // Land Cost = area × agreed rate + PLC premium − discount
@@ -212,10 +225,17 @@ export default function NewBooking() {
 
     let landownerShareAmt = 0;
     let companyShareAmt = totalConsideration;
+    let ksrOwesLandowner = 0;
 
     if (selectedProject.is_jv) {
       landownerShareAmt = glvTotal;
       companyShareAmt = totalConsideration - glvTotal;
+
+      // What KSR itself will separately owe the landowner later:
+      // (plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
+      const landownerRatePerCent = Number(selectedProject.landowner_rate_per_cent) || 0;
+      const areaCents = area / CENTS_TO_SQFT;
+      ksrOwesLandowner = (areaCents * landownerRatePerCent) - glvTotal;
     }
 
     const landownerSharePct = totalConsideration > 0 ? (landownerShareAmt / totalConsideration) * 100 : 0;
@@ -233,6 +253,7 @@ export default function NewBooking() {
       companyShareAmt,
       landownerSharePct,
       companySharePct,
+      ksrOwesLandowner,
     };
   }, [selectedPlot, selectedProject, effectiveRate, discountAmount]);
 
@@ -324,6 +345,7 @@ export default function NewBooking() {
         landowner_share_pct: calc.landownerSharePct,
         company_share_amt: calc.companyShareAmt,
         landowner_share_amt: calc.landownerShareAmt,
+        ksr_owes_landowner: selectedProject.is_jv ? calc.ksrOwesLandowner : null,
         registrant_same_as_customer: registrantSame,
         registrant_name: registrantSame ? null : registrant.name.trim(),
         registrant_pan: registrantSame ? null : registrant.pan.trim() || null,
@@ -634,14 +656,28 @@ export default function NewBooking() {
             <Field label="Area (Sq.ft)">
               <input type="text" value={calc.area} disabled className="input bg-slate-50" />
             </Field>
-            <Field label="Agreed Rate (₹/Sq.ft)">
-              <input
-                type="number"
-                value={agreedRate === '' ? selectedPlot.base_price_sqft : agreedRate}
-                onChange={(e) => setAgreedRate(e.target.value)}
-                className="input"
-              />
-            </Field>
+            {isCentsProject ? (
+              <Field label="Agreed Rate (₹/Cent)">
+                <input
+                  type="number"
+                  value={agreedRateCent === '' ? selectedProject.sale_rate_per_cent ?? '' : agreedRateCent}
+                  onChange={(e) => setAgreedRateCent(e.target.value)}
+                  className="input"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  ≈ ₹{effectiveRate.toFixed(2)}/Sq.ft (used at full precision for Land Cost, not rounded)
+                </p>
+              </Field>
+            ) : (
+              <Field label="Agreed Rate (₹/Sq.ft)">
+                <input
+                  type="number"
+                  value={agreedRate === '' ? selectedPlot.base_price_sqft : agreedRate}
+                  onChange={(e) => setAgreedRate(e.target.value)}
+                  className="input"
+                />
+              </Field>
+            )}
             <Field label="PLC/Premium (included)">
               <input type="text" value={inr(calc.premium)} disabled className="input bg-slate-50" />
             </Field>
@@ -720,6 +756,19 @@ export default function NewBooking() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {selectedProject.is_jv && (
+            <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-amber-800">KSR Owes Landowner (overall, settled later)</span>
+                <span className="font-semibold text-amber-900">{inr(calc.ksrOwesLandowner)}</span>
+              </div>
+              <p className="text-xs text-amber-700 mt-1">
+                (Plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
+                {!selectedProject.landowner_rate_per_cent && ' Set a Landowner Rate on this project to see this figure.'}
+              </p>
             </div>
           )}
         </Section>

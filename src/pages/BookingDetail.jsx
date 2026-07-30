@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Pencil, Trash2, X, FileText, Receipt } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, X, FileText, Receipt, Ban } from 'lucide-react';
 
 const PAYMENT_MODES = [
   { value: 'cash', label: 'Cash' },
@@ -46,6 +46,13 @@ export default function BookingDetail() {
   const [editingPayment, setEditingPayment] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundDate, setRefundDate] = useState(new Date().toISOString().slice(0, 10));
+  const [refundMode, setRefundMode] = useState('cash');
+  const [refundReference, setRefundReference] = useState('');
+  const [refundNotes, setRefundNotes] = useState('');
 
   const { data: booking, isLoading } = useQuery({
     queryKey: ['booking-detail', bookingId],
@@ -336,6 +343,18 @@ export default function BookingDetail() {
               </div>
             ))}
           </div>
+
+          {booking.ksr_owes_landowner != null && (
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-amber-800">KSR Owes Landowner (overall, settled later)</span>
+                <span className="font-semibold text-amber-900">{inr(booking.ksr_owes_landowner)}</span>
+              </div>
+              <p className="text-xs text-amber-700 mt-1">
+                Snapshot at booking time — (plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
