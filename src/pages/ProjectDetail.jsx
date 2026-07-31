@@ -379,7 +379,7 @@ function AssignedEmployeesSection({ projectId, qc }) {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
 
   const { data: assigned, refetch } = useQuery({
-    queryKey: ['project-employees', projectId],
+    queryKey: ['project-employees-assigned', projectId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('project_employees')
@@ -435,6 +435,7 @@ function AssignedEmployeesSection({ projectId, qc }) {
   const roleLabel = (role) => ({
     sales_executive: 'Sales Executive',
     sales_manager: 'Sales Manager',
+    presales: 'Presales',
     project_head: 'Project Head',
     md: 'MD',
     accounts: 'Accounts',
@@ -469,6 +470,98 @@ function AssignedEmployeesSection({ projectId, qc }) {
                 <span style={{color:'#64748b',fontSize:'12px'}}>{roleLabel(a.employees?.role)}</span>
                 <button onClick={() => removeAssignment(a.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:0}}><Trash2 size={14}/></button>
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+// ── Assigned Channel Partners Section ───────────────────────────────────────
+function AssignedChannelPartnersSection({ projectId, qc }) {
+  const [adding, setAdding] = useState(false)
+  const [selectedPartnerId, setSelectedPartnerId] = useState('')
+
+  const { data: assigned, refetch } = useQuery({
+    queryKey: ['project-channel-partners-assigned', projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('project_channel_partners')
+        .select('id, channel_partner_id, channel_partners ( id, name )')
+        .eq('project_id', projectId)
+        .order('assigned_at')
+      if (error) throw error
+      return data
+    },
+  })
+
+  const { data: allPartners } = useQuery({
+    queryKey: ['channel-partners-active'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('channel_partners')
+        .select('id, name')
+        .eq('active', true)
+        .order('name')
+      if (error) throw error
+      return data
+    },
+  })
+
+  const assignedIds = new Set((assigned || []).map(a => a.channel_partner_id))
+  const availablePartners = (allPartners || []).filter(p => !assignedIds.has(p.id))
+
+  const addAssignment = useMutation({
+    mutationFn: async () => {
+      if (!selectedPartnerId) throw new Error('Select a channel partner')
+      const { error } = await supabase.from('project_channel_partners').insert({
+        project_id: projectId,
+        channel_partner_id: selectedPartnerId,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Channel partner assigned')
+      refetch()
+      setAdding(false)
+      setSelectedPartnerId('')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const removeAssignment = async (id) => {
+    if (!window.confirm('Remove this channel partner from the project?')) return
+    const { error } = await supabase.from('project_channel_partners').delete().eq('id', id)
+    if (error) toast.error(error.message)
+    else { toast.success('Channel partner removed'); refetch() }
+  }
+
+  return (
+    <Section title="Assigned Channel Partners"
+      action={<button onClick={() => setAdding(a=>!a)} style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 10px',border:'1px solid #b8cde8',borderRadius:'6px',background:'#EAF1FA',fontSize:'12px',fontWeight:600,cursor:'pointer',color:'#1B2A4A'}}><Plus size={12}/> Add</button>}>
+
+      {adding && (
+        <div style={{background:'#f8fafc',borderRadius:'8px',padding:'12px',marginBottom:'12px',display:'flex',gap:'8px',alignItems:'center'}}>
+          <select style={inp} value={selectedPartnerId} onChange={e=>setSelectedPartnerId(e.target.value)}>
+            <option value="">Select channel partner...</option>
+            {availablePartners.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <button onClick={() => addAssignment.mutate()} disabled={addAssignment.isPending} style={{padding:'6px 14px',background:'#1B2A4A',color:'white',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>{addAssignment.isPending ? 'Saving…' : 'Assign'}</button>
+          <button onClick={() => setAdding(false)} style={{padding:'6px 14px',background:'white',color:'#64748b',border:'1px solid #e2e8f0',borderRadius:'6px',fontSize:'12px',fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>Cancel</button>
+        </div>
+      )}
+
+      {!assigned?.length ? (
+        <div style={{color:'#94a3b8',fontSize:'13px',padding:'8px 0'}}>No channel partners assigned yet — this project's New Booking form will have no Channel Partner options until you add some.</div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+          {assigned.map(a => (
+            <div key={a.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid #f8fafc',fontSize:'13px'}}>
+              <span style={{fontWeight:500,color:'#1B2A4A'}}>{a.channel_partners?.name}</span>
+              <button onClick={() => removeAssignment(a.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:0}}><Trash2 size={14}/></button>
             </div>
           ))}
         </div>
@@ -1143,6 +1236,7 @@ export default function ProjectDetail() {
       <DetailsSection proj={proj} projectId={projectId} qc={qc} />
       <RatesSection   proj={proj} projectId={projectId} qc={qc} />
       <AssignedEmployeesSection projectId={projectId} qc={qc} />
+      <AssignedChannelPartnersSection projectId={projectId} qc={qc} />
       <LandownersSection proj={proj} projectId={projectId} qc={qc} />
       <PLCSection proj={proj} projectId={projectId} qc={qc} />
       <PlotsSection proj={proj} projectId={projectId} />

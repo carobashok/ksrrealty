@@ -34,6 +34,7 @@ export default function NewBooking() {
 
   const [agreedRate, setAgreedRate] = useState('');
   const [agreedRateCent, setAgreedRateCent] = useState('');
+  const [areaOverride, setAreaOverride] = useState('');
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountApprovedBy, setDiscountApprovedBy] = useState('');
   const [discountNotes, setDiscountNotes] = useState('');
@@ -152,7 +153,7 @@ export default function NewBooking() {
   // Employees assigned to the selected project (via project_employees).
   // Used to restrict Assigned Executive + incentive-split dropdowns.
   const { data: projectEmployees = [] } = useQuery({
-    queryKey: ['project-employees', projectId],
+    queryKey: ['project-employees-for-booking', projectId],
     enabled: !!projectId,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -167,17 +168,21 @@ export default function NewBooking() {
     },
   });
 
-  const { data: partners = [] } = useQuery({
-    queryKey: ['channel-partners-active'],
+  // Channel partners assigned to the selected project (via project_channel_partners).
+  // Used to restrict the Channel Partner dropdown.
+  const { data: projectPartners = [] } = useQuery({
+    queryKey: ['project-channel-partners-for-booking', projectId],
+    enabled: !!projectId,
     queryFn: async () => {
       const { data, error } = await supabase
         .schema('ksr')
-        .from('channel_partners')
-        .select('id, name')
-        .eq('active', true)
-        .order('name');
+        .from('project_channel_partners')
+        .select('channel_partner_id, channel_partners ( id, name, active )')
+        .eq('project_id', projectId);
       if (error) throw error;
-      return data;
+      return data
+        .map((row) => row.channel_partners)
+        .filter((p) => p && p.active !== false);
     },
   });
 
@@ -294,7 +299,8 @@ export default function NewBooking() {
       if (!plotId) throw new Error('Select a plot');
       if (!customerId && !showNewCustomer) throw new Error('Select or add a customer');
       if (!tokenAdvance || Number(tokenAdvance) <= 0) throw new Error('Enter advance amount');
-      if (!assignedExecutiveId) throw new Error('Select the assigned executive');
+      if (!assignedExecutiveId && source !== 'channel_partner')
+        throw new Error('Select the assigned executive');
       if (!registrantSame && !registrant.name.trim())
         throw new Error('Enter registrant name, or toggle "Same as customer"');
 
@@ -330,7 +336,7 @@ export default function NewBooking() {
         booking_date: tokenDate,
         source,
         channel_partner_id: channelPartnerId || null,
-        assigned_executive_id: assignedExecutiveId,
+        assigned_executive_id: assignedExecutiveId || null,
         agreed_rate_sqft: effectiveRate,
         land_cost: calc.landCost,
         reg_charge_amount: calc.regChargeAmount,
@@ -791,15 +797,20 @@ export default function NewBooking() {
                 className="input"
               >
                 <option value="">Select...</option>
-                {partners.map((p) => (
+                {projectPartners.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
               </select>
+              {projectId && projectPartners.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  No channel partners assigned to this project yet — add them on the Project page.
+                </p>
+              )}
             </Field>
           )}
-          <Field label="Assigned Executive *">
+          <Field label={source === 'channel_partner' ? 'Assigned Executive (optional)' : 'Assigned Executive *'}>
             <select
               value={assignedExecutiveId}
               onChange={(e) => setAssignedExecutiveId(e.target.value)}

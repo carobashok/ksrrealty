@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Users, FileText,
-  CreditCard, UserCog, ChevronRight, Map, Settings, LogOut
+  CreditCard, UserCog, ChevronRight, Map, Settings, LogOut, Handshake
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 
@@ -12,6 +12,7 @@ const nav = [
   { to: '/bookings',   label: 'Bookings',         icon: FileText },
   { to: '/payments',   label: 'Payments',         icon: CreditCard },
   { to: '/employees',  label: 'Employees',        icon: UserCog },
+  { to: '/channel-partners', label: 'Channel Partners', icon: Handshake },
   { to: '/settings',   label: 'Settings',          icon: Settings },
 ]
 

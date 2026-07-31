@@ -1,35 +1,21 @@
-// src/pages/Employees.jsx
+// src/pages/ChannelPartners.jsx
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { Search, Plus, Pencil, Trash2, X, Phone, Mail } from 'lucide-react';
 
-// Must exactly match the DB check constraint "employees_role_check"
-const ROLE_OPTIONS = [
-  { value: 'sales_executive', label: 'Sales Executive' },
-  { value: 'sales_manager', label: 'Sales Manager' },
-  { value: 'presales', label: 'Presales' },
-  { value: 'project_head', label: 'Project Head' },
-  { value: 'md', label: 'MD' },
-  { value: 'accounts', label: 'Accounts' },
-  { value: 'admin', label: 'Admin' },
-];
-
-const roleLabel = (value) => ROLE_OPTIONS.find((r) => r.value === value)?.label || value;
-
 const emptyForm = {
   id: null,
   name: '',
-  employee_code: '',
-  role: '',
-  reporting_to: '',
+  partner_code: '',
+  contact_person: '',
   mobile: '',
   email: '',
   active: true,
 };
 
-export default function Employees() {
+export default function ChannelPartners() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showInactive, setShowInactive] = useState(false);
@@ -38,12 +24,12 @@ export default function Employees() {
   const [isEdit, setIsEdit] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const { data: employees = [], isLoading } = useQuery({
-    queryKey: ['employees'],
+  const { data: partners = [], isLoading } = useQuery({
+    queryKey: ['channel-partners'],
     queryFn: async () => {
       const { data, error } = await supabase
         .schema('ksr')
-        .from('employees')
+        .from('channel_partners')
         .select('*')
         .order('name');
       if (error) throw error;
@@ -51,28 +37,33 @@ export default function Employees() {
     },
   });
 
-  const employeeMap = Object.fromEntries(employees.map((e) => [e.id, e.name]));
-
   const saveMutation = useMutation({
     mutationFn: async (payload) => {
+      const cleaned = {
+        ...payload,
+        partner_code: payload.partner_code.trim() || null,
+        contact_person: payload.contact_person.trim() || null,
+        mobile: payload.mobile.trim() || null,
+        email: payload.email.trim() || null,
+      };
       if (payload.id) {
-        const { id, ...rest } = payload;
+        const { id, ...rest } = cleaned;
         const { error } = await supabase
           .schema('ksr')
-          .from('employees')
+          .from('channel_partners')
           .update(rest)
           .eq('id', id);
         if (error) throw error;
       } else {
-        const { id, ...rest } = payload;
-        const { error } = await supabase.schema('ksr').from('employees').insert(rest);
+        const { id, ...rest } = cleaned;
+        const { error } = await supabase.schema('ksr').from('channel_partners').insert(rest);
         if (error) throw error;
       }
     },
     onSuccess: () => {
-      toast.success(isEdit ? 'Employee updated' : 'Employee added');
-      queryClient.invalidateQueries({ queryKey: ['employees'] });
-      queryClient.invalidateQueries({ queryKey: ['employees-active'] });
+      toast.success(isEdit ? 'Channel partner updated' : 'Channel partner added');
+      queryClient.invalidateQueries({ queryKey: ['channel-partners'] });
+      queryClient.invalidateQueries({ queryKey: ['channel-partners-active'] });
       closeModal();
     },
     onError: (err) => toast.error(err.message || 'Something went wrong'),
@@ -80,17 +71,17 @@ export default function Employees() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      const { error } = await supabase.schema('ksr').from('employees').delete().eq('id', id);
+      const { error } = await supabase.schema('ksr').from('channel_partners').delete().eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success('Employee deleted');
-      queryClient.invalidateQueries({ queryKey: ['employees'] });
-      queryClient.invalidateQueries({ queryKey: ['employees-active'] });
+      toast.success('Channel partner deleted');
+      queryClient.invalidateQueries({ queryKey: ['channel-partners'] });
+      queryClient.invalidateQueries({ queryKey: ['channel-partners-active'] });
       setDeleteTarget(null);
     },
     onError: () => {
-      toast.error('Cannot delete — this employee may be linked to bookings or reports');
+      toast.error('Cannot delete — this partner may be linked to a booking or project');
       setDeleteTarget(null);
     },
   });
@@ -101,16 +92,15 @@ export default function Employees() {
     setModalOpen(true);
   };
 
-  const openEditModal = (emp) => {
+  const openEditModal = (p) => {
     setForm({
-      id: emp.id,
-      name: emp.name || '',
-      employee_code: emp.employee_code || '',
-      role: emp.role || '',
-      reporting_to: emp.reporting_to || '',
-      mobile: emp.mobile || '',
-      email: emp.email || '',
-      active: emp.active ?? true,
+      id: p.id,
+      name: p.name || '',
+      partner_code: p.partner_code || '',
+      contact_person: p.contact_person || '',
+      mobile: p.mobile || '',
+      email: p.email || '',
+      active: p.active ?? true,
     });
     setIsEdit(true);
     setModalOpen(true);
@@ -126,39 +116,28 @@ export default function Employees() {
       toast.error('Name is required');
       return;
     }
-    if (!form.role.trim()) {
-      toast.error('Role is required');
-      return;
-    }
-    saveMutation.mutate({
-      ...form,
-      employee_code: form.employee_code.trim() || null,
-      reporting_to: form.reporting_to || null,
-    });
+    saveMutation.mutate(form);
   };
 
-  const filtered = employees.filter((e) => {
-    if (!showInactive && e.active === false) return false;
+  const filtered = partners.filter((p) => {
+    if (!showInactive && p.active === false) return false;
     const q = search.toLowerCase();
     return (
-      e.name?.toLowerCase().includes(q) ||
-      e.employee_code?.toLowerCase().includes(q) ||
-      e.role?.toLowerCase().includes(q) ||
-      e.mobile?.toLowerCase().includes(q)
+      p.name?.toLowerCase().includes(q) ||
+      p.partner_code?.toLowerCase().includes(q) ||
+      p.contact_person?.toLowerCase().includes(q) ||
+      p.mobile?.toLowerCase().includes(q)
     );
   });
-
-  // Exclude self from "Reports To" options when editing
-  const reportingOptions = employees.filter((e) => e.id !== form.id);
 
   return (
     <div className="p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Employees</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Channel Partners</h1>
           <p className="text-sm text-slate-500">
-            {employees.filter((e) => e.active !== false).length} active · {employees.length} total
+            {partners.filter((p) => p.active !== false).length} active · {partners.length} total
           </p>
         </div>
         <button
@@ -166,7 +145,7 @@ export default function Employees() {
           className="flex items-center gap-2 bg-[#0a1f44] text-white px-4 py-2 rounded-lg hover:bg-[#122a5c] transition"
         >
           <Plus size={18} />
-          New Employee
+          New Channel Partner
         </button>
       </div>
 
@@ -176,7 +155,7 @@ export default function Employees() {
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by name, code, role, or mobile..."
+            placeholder="Search by name, code, contact, or mobile..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
@@ -195,10 +174,10 @@ export default function Employees() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         {isLoading ? (
-          <div className="p-8 text-center text-slate-400">Loading employees...</div>
+          <div className="p-8 text-center text-slate-400">Loading channel partners...</div>
         ) : filtered.length === 0 ? (
           <div className="p-8 text-center text-slate-400">
-            {search ? 'No employees match your search' : 'No employees yet — add one to get started'}
+            {search ? 'No channel partners match your search' : 'No channel partners yet — add one to get started'}
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -206,58 +185,54 @@ export default function Employees() {
               <tr>
                 <th className="text-left px-4 py-3">Name</th>
                 <th className="text-left px-4 py-3">Code</th>
-                <th className="text-left px-4 py-3">Role</th>
-                <th className="text-left px-4 py-3">Reports To</th>
+                <th className="text-left px-4 py-3">Contact Person</th>
                 <th className="text-left px-4 py-3">Contact</th>
                 <th className="text-left px-4 py-3">Status</th>
                 <th className="text-right px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => (
-                <tr key={e.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-slate-800">{e.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{e.employee_code || '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{roleLabel(e.role)}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {e.reporting_to ? employeeMap[e.reporting_to] || '—' : '—'}
-                  </td>
+              {filtered.map((p) => (
+                <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>
+                  <td className="px-4 py-3 text-slate-600">{p.partner_code || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{p.contact_person || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">
                     <div className="flex flex-col gap-0.5">
-                      {e.mobile && (
+                      {p.mobile && (
                         <span className="flex items-center gap-1 text-xs">
-                          <Phone size={12} className="text-slate-400" /> {e.mobile}
+                          <Phone size={12} className="text-slate-400" /> {p.mobile}
                         </span>
                       )}
-                      {e.email && (
+                      {p.email && (
                         <span className="flex items-center gap-1 text-xs">
-                          <Mail size={12} className="text-slate-400" /> {e.email}
+                          <Mail size={12} className="text-slate-400" /> {p.email}
                         </span>
                       )}
-                      {!e.mobile && !e.email && '—'}
+                      {!p.mobile && !p.email && '—'}
                     </div>
                   </td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-block px-2 py-0.5 rounded-full text-xs border ${
-                        e.active === false
+                        p.active === false
                           ? 'bg-slate-50 text-slate-500 border-slate-200'
                           : 'bg-green-50 text-green-700 border-green-200'
                       }`}
                     >
-                      {e.active === false ? 'Inactive' : 'Active'}
+                      {p.active === false ? 'Inactive' : 'Active'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => openEditModal(e)}
+                        onClick={() => openEditModal(p)}
                         className="p-1.5 text-slate-500 hover:text-[#0a1f44] hover:bg-slate-100 rounded"
                       >
                         <Pencil size={16} />
                       </button>
                       <button
-                        onClick={() => setDeleteTarget(e)}
+                        onClick={() => setDeleteTarget(p)}
                         className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded"
                       >
                         <Trash2 size={16} />
@@ -277,7 +252,7 @@ export default function Employees() {
           <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-slate-800">
-                {isEdit ? 'Edit Employee' : 'New Employee'}
+                {isEdit ? 'Edit Channel Partner' : 'New Channel Partner'}
               </h2>
               <button onClick={closeModal} className="text-slate-400 hover:text-slate-600">
                 <X size={20} />
@@ -292,52 +267,29 @@ export default function Employees() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
-                  placeholder="Full name"
+                  placeholder="Firm / agent name"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500">Employee Code</label>
-                  <input
-                    type="text"
-                    value={form.employee_code}
-                    onChange={(e) => setForm({ ...form, employee_code: e.target.value })}
-                    className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
-                    placeholder="e.g. KSR-EMP-014"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500">Role *</label>
-                  <select
-                    value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value })}
-                    className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
-                  >
-                    <option value="">Select role...</option>
-                    {ROLE_OPTIONS.map((r) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500">Partner Code</label>
+                <input
+                  type="text"
+                  value={form.partner_code}
+                  onChange={(e) => setForm({ ...form, partner_code: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+                  placeholder="e.g. CP-014"
+                />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-500">Reports To</label>
-                <select
-                  value={form.reporting_to}
-                  onChange={(e) => setForm({ ...form, reporting_to: e.target.value })}
+                <label className="text-xs font-medium text-slate-500">Contact Person</label>
+                <input
+                  type="text"
+                  value={form.contact_person}
+                  onChange={(e) => setForm({ ...form, contact_person: e.target.value })}
                   className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
-                >
-                  <option value="">None</option>
-                  {reportingOptions.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} {r.role ? `(${roleLabel(r.role)})` : ''}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -367,7 +319,7 @@ export default function Employees() {
                   checked={form.active}
                   onChange={(e) => setForm({ ...form, active: e.target.checked })}
                 />
-                Active (shows up in booking / block dropdowns)
+                Active (shows up in project assignment / booking dropdowns)
               </label>
             </div>
 
@@ -383,7 +335,7 @@ export default function Employees() {
                 disabled={saveMutation.isPending}
                 className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg hover:bg-[#122a5c] disabled:opacity-50"
               >
-                {saveMutation.isPending ? 'Saving...' : isEdit ? 'Update' : 'Add Employee'}
+                {saveMutation.isPending ? 'Saving...' : isEdit ? 'Update' : 'Add Channel Partner'}
               </button>
             </div>
           </div>
@@ -394,7 +346,7 @@ export default function Employees() {
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-800 mb-2">Delete employee?</h3>
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">Delete channel partner?</h3>
             <p className="text-sm text-slate-500 mb-6">
               This will permanently remove <span className="font-medium">{deleteTarget.name}</span>.
               This cannot be undone.

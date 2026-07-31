@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Pencil, Trash2, X, FileText, Receipt, Ban } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, X, FileText, Receipt, Ban, ChevronDown } from 'lucide-react';
 
 const PAYMENT_MODES = [
   { value: 'cash', label: 'Cash' },
@@ -47,6 +47,13 @@ export default function BookingDetail() {
   const [editForm, setEditForm] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [newStatus, setNewStatus] = useState('');
+  const [agreementDate, setAgreementDate] = useState('');
+  const [registrationDate, setRegistrationDate] = useState('');
+  const [registrationDocNo, setRegistrationDocNo] = useState('');
+
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [refundAmount, setRefundAmount] = useState('');
   const [refundDate, setRefundDate] = useState(new Date().toISOString().slice(0, 10));
@@ -65,7 +72,9 @@ export default function BookingDetail() {
           *,
           customers ( id, name, mobile, email ),
           projects ( id, name, is_jv ),
-          plots ( id, plot_number, block, area_sqft )
+          plots ( id, plot_number, block, area_sqft ),
+          assigned_executive:employees!assigned_executive_id ( id, name, role ),
+          channel_partners ( id, name, partner_code )
         `
         )
         .eq('id', bookingId)
@@ -193,6 +202,40 @@ export default function BookingDetail() {
     onError: (err) => toast.error(err.message || 'Failed to delete payment'),
   });
 
+  const openStatusModal = (status) => {
+    setNewStatus(status);
+    setAgreementDate(booking.agreement_signed_date || new Date().toISOString().slice(0, 10));
+    setRegistrationDate(booking.registration_date || new Date().toISOString().slice(0, 10));
+    setRegistrationDocNo(booking.registration_doc_no || '');
+    setShowStatusModal(true);
+  };
+
+  const statusChangeMutation = useMutation({
+    mutationFn: async (targetStatus) => {
+      const status = targetStatus ?? newStatus;
+      const payload = { status };
+      if (status === 'agreement_signed') {
+        if (!agreementDate) throw new Error('Enter the agreement signed date');
+        payload.agreement_signed_date = agreementDate;
+      }
+      if (status === 'registered') {
+        if (!registrationDate) throw new Error('Enter the registration date');
+        if (!registrationDocNo.trim()) throw new Error('Enter the registration document number');
+        payload.agreement_signed_date = agreementDate || null;
+        payload.registration_date = registrationDate;
+        payload.registration_doc_no = registrationDocNo.trim();
+      }
+      const { error } = await supabase.schema('ksr').from('bookings').update(payload).eq('id', bookingId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Status updated');
+      queryClient.invalidateQueries({ queryKey: ['booking-detail', bookingId] });
+      setShowStatusModal(false);
+    },
+    onError: (err) => toast.error(err.message || 'Failed to update status'),
+  });
+
   const inr = (n) =>
     new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -258,14 +301,50 @@ export default function BookingDetail() {
             <p className="text-sm text-slate-500">
               {booking.customers?.mobile} {booking.customers?.email ? `· ${booking.customers.email}` : ''}
             </p>
+            {booking.assigned_executive?.name && (
+              <p className="text-sm text-slate-500 mt-1">
+                Assigned Executive: <span className="font-medium text-slate-700">{booking.assigned_executive.name}</span>
+              </p>
+            )}
+            {booking.channel_partners?.name && (
+              <p className="text-sm text-slate-500 mt-1">
+                Channel Partner: <span className="font-medium text-slate-700">{booking.channel_partners.name}</span>
+                {booking.channel_partners.partner_code ? ` (${booking.channel_partners.partner_code})` : ''}
+              </p>
+            )}
           </div>
-          <span
-            className={`px-2 py-1 rounded-full text-xs border ${
-              STATUS_STYLES[booking.status] || 'bg-slate-50 text-slate-600 border-slate-200'
-            }`}
-          >
-            {STATUS_LABELS[booking.status] || booking.status}
-          </span>
+          <div className="relative">
+            <button
+              onClick={() => setShowStatusMenu((s) => !s)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border ${
+                STATUS_STYLES[booking.status] || 'bg-slate-50 text-slate-600 border-slate-200'
+              }`}
+            >
+              {STATUS_LABELS[booking.status] || booking.status}
+              <ChevronDown size={12} className={showStatusMenu ? 'rotate-180 transition-transform' : 'transition-transform'} />
+            </button>
+            {showStatusMenu && (
+              <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-10 py-1 w-40">
+                {Object.keys(STATUS_LABELS).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setShowStatusMenu(false);
+                      if (s === booking.status) return;
+                      if (s === 'agreement_signed' || s === 'registered') {
+                        openStatusModal(s);
+                      } else {
+                        statusChangeMutation.mutate(s);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                  >
+                    {STATUS_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100 text-sm">
@@ -283,6 +362,47 @@ export default function BookingDetail() {
           </div>
         </div>
       </div>
+
+      {/* Registration Details — only shown once at least one field is captured */}
+      {(booking.agreement_signed_date || booking.registration_date || booking.registration_doc_no) && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+          <h3 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
+            Registration Details
+          </h3>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            {booking.agreement_signed_date && (
+              <div>
+                <div className="text-slate-400 text-xs">Agreement Signed Date</div>
+                <div className="font-medium text-slate-700">
+                  {new Date(booking.agreement_signed_date).toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </div>
+              </div>
+            )}
+            {booking.registration_date && (
+              <div>
+                <div className="text-slate-400 text-xs">Registration Date</div>
+                <div className="font-medium text-slate-700">
+                  {new Date(booking.registration_date).toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </div>
+              </div>
+            )}
+            {booking.registration_doc_no && (
+              <div>
+                <div className="text-slate-400 text-xs">Registration Document No.</div>
+                <div className="font-medium text-slate-700">{booking.registration_doc_no}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Overall summary */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">
@@ -669,6 +789,74 @@ export default function BookingDetail() {
                 className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg hover:bg-[#122a5c] disabled:opacity-50"
               >
                 {updatePaymentMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Change Modal */}
+      {showStatusModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-800">
+                Mark as {STATUS_LABELS[newStatus] || newStatus}
+              </h2>
+              <button onClick={() => setShowStatusModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500">Agreement Signed Date</label>
+                <input
+                  type="date"
+                  value={agreementDate}
+                  onChange={(e) => setAgreementDate(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+
+              {newStatus === 'registered' && (
+                <>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Registration Date *</label>
+                    <input
+                      type="date"
+                      value={registrationDate}
+                      onChange={(e) => setRegistrationDate(e.target.value)}
+                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Registration Document No. *</label>
+                    <input
+                      type="text"
+                      value={registrationDocNo}
+                      onChange={(e) => setRegistrationDocNo(e.target.value)}
+                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                      placeholder="e.g. Doc No. 1234/2026"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowStatusModal(false)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => statusChangeMutation.mutate(newStatus)}
+                disabled={statusChangeMutation.isPending}
+                className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg hover:bg-[#122a5c] disabled:opacity-50"
+              >
+                {statusChangeMutation.isPending ? 'Saving...' : 'Confirm'}
               </button>
             </div>
           </div>
