@@ -13,7 +13,10 @@ const PAYMENT_MODES = [
   { value: 'rtgs', label: 'RTGS' },
   { value: 'upi', label: 'UPI' },
   { value: 'dd', label: 'DD' },
+  { value: 'imps', label: 'IMPS' },
 ];
+
+const modeLabel = (value) => PAYMENT_MODES.find((m) => m.value === value)?.label || value;
 
 const STATUS_STYLES = {
   booked: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -632,7 +635,7 @@ export default function BookingDetail() {
                         : 'Company (KSR)'}
                       {p.notes ? <span className="text-slate-400"> · {p.notes}</span> : ''}
                     </td>
-                    <td className="py-2 text-slate-600 capitalize">{p.mode || '—'}</td>
+                    <td className="py-2 text-slate-600">{modeLabel(p.mode) || '—'}</td>
                     <td className="py-2 text-slate-600">{p.reference_no || '—'}</td>
                     <td className="py-2 text-right font-medium text-slate-800">
                       {inr(p.amount)}

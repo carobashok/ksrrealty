@@ -5,6 +5,9 @@ import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Printer, CheckCircle } from 'lucide-react';
 
+const MODE_LABELS = { cash: 'Cash', cheque: 'Cheque', neft: 'NEFT', rtgs: 'RTGS', upi: 'UPI', dd: 'DD', imps: 'IMPS' };
+const modeLabel = (value) => MODE_LABELS[value] || value;
+
 export default function ReceiptView() {
   const { bookingId, paymentId } = useParams();
   const navigate = useNavigate();
@@ -188,7 +191,7 @@ export default function ReceiptView() {
               <td className="px-3 py-2 font-medium text-slate-600 border-r border-slate-300">
                 Payment Mode
               </td>
-              <td className="px-3 py-2 text-slate-800 capitalize">{payment.mode || '—'}</td>
+              <td className="px-3 py-2 text-slate-800">{modeLabel(payment.mode) || '—'}</td>
             </tr>
             <tr className="border-b border-slate-300">
               <td className="px-3 py-2 font-medium text-slate-600 border-r border-slate-300">

@@ -5,6 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Search } from 'lucide-react';
 
+const MODE_LABELS = { cash: 'Cash', cheque: 'Cheque', neft: 'NEFT', rtgs: 'RTGS', upi: 'UPI', dd: 'DD', imps: 'IMPS' };
+const modeLabel = (value) => MODE_LABELS[value] || value;
+
 export default function Payments() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -205,7 +208,7 @@ export default function Payments() {
                       ? `Landowner${p.project_landowners ? ` — ${p.project_landowners.landowner_name}` : ''}`
                       : 'Company (KSR)'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 capitalize">{p.mode || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{modeLabel(p.mode) || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{p.reference_no || '—'}</td>
                   <td className="px-4 py-3 text-right font-medium text-slate-800">
                     {inr(p.amount)}

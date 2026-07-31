@@ -8,6 +8,7 @@ import { useAuth } from '../lib/AuthContext'
 const nav = [
   { to: '/dashboard',  label: 'Dashboard',       icon: LayoutDashboard },
   { to: '/projects',   label: 'Projects',         icon: Building2 },
+  { to: '/inventory-overview', label: 'Inventory Overview', icon: Map },
   { to: '/customers',  label: 'Customers',        icon: Users },
   { to: '/bookings',   label: 'Bookings',         icon: FileText },
   { to: '/payments',   label: 'Payments',         icon: CreditCard },

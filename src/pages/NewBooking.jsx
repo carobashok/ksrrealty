@@ -16,6 +16,7 @@ const PAYMENT_MODES = [
   { value: 'rtgs', label: 'RTGS' },
   { value: 'upi', label: 'UPI' },
   { value: 'dd', label: 'DD' },
+  { value: 'imps', label: 'IMPS' },
 ];
 
 export default function NewBooking() {
