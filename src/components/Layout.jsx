@@ -1,25 +1,36 @@
+import { useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Users, FileText,
-  CreditCard, UserCog, ChevronRight, Map, Settings, LogOut, Handshake
+  CreditCard, UserCog, ChevronRight, ChevronDown, Map, Settings, LogOut, Handshake, FolderCog
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 
 const nav = [
   { to: '/dashboard',  label: 'Dashboard',       icon: LayoutDashboard },
   { to: '/projects',   label: 'Projects',         icon: Building2 },
-  { to: '/inventory-overview', label: 'Inventory Overview', icon: Map },
-  { to: '/customers',  label: 'Customers',        icon: Users },
+  {
+    group: 'master',
+    label: 'Master',
+    icon: FolderCog,
+    items: [
+      { to: '/customers',        label: 'Customers',        icon: Users },
+      { to: '/employees',        label: 'Employees',        icon: UserCog },
+      { to: '/channel-partners', label: 'Channel Partners', icon: Handshake },
+    ],
+  },
   { to: '/bookings',   label: 'Bookings',         icon: FileText },
   { to: '/payments',   label: 'Payments',         icon: CreditCard },
-  { to: '/employees',  label: 'Employees',        icon: UserCog },
-  { to: '/channel-partners', label: 'Channel Partners', icon: Handshake },
   { to: '/settings',   label: 'Settings',          icon: Settings },
 ]
 
 export default function Layout() {
   const { signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  const masterPaths = nav.find(n => n.group === 'master')?.items.map(i => i.to) || []
+  const [masterOpen, setMasterOpen] = useState(masterPaths.includes(location.pathname))
 
   const handleLogout = async () => {
     await signOut()
@@ -38,22 +49,60 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 py-4 space-y-0.5 px-2">
-          {nav.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-brand text-white'
-                    : 'text-white/70 hover:bg-white/10 hover:text-white'
-                }`
-              }
-            >
-              <Icon size={17} />
-              {label}
-            </NavLink>
-          ))}
+          {nav.map((item) => {
+            if (item.group) {
+              const GroupIcon = item.icon
+              return (
+                <div key={item.group}>
+                  <button
+                    onClick={() => setMasterOpen((o) => !o)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-white/70 hover:bg-white/10 hover:text-white"
+                  >
+                    <GroupIcon size={17} />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    {masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
+                  {masterOpen && (
+                    <div className="ml-3 pl-3 border-l border-white/10 space-y-0.5 mt-0.5">
+                      {item.items.map(({ to, label, icon: Icon }) => (
+                        <NavLink
+                          key={to}
+                          to={to}
+                          className={({ isActive }) =>
+                            `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              isActive
+                                ? 'bg-brand text-white'
+                                : 'text-white/60 hover:bg-white/10 hover:text-white'
+                            }`
+                          }
+                        >
+                          <Icon size={15} />
+                          {label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-brand text-white'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  }`
+                }
+              >
+                <Icon size={17} />
+                {item.label}
+              </NavLink>
+            )
+          })}
         </nav>
 
         {/* Footer */}

@@ -16,7 +16,6 @@ import NewBooking from './pages/NewBooking'
 import Payments from './pages/Payments'
 import Employees from './pages/Employees'
 import ChannelPartners from './pages/ChannelPartners'
-import InventoryOverview from './pages/InventoryOverview'
 import QuotationView from './pages/QuotationView'
 import ReceiptView from './pages/ReceiptView'
 import Settings from './pages/Settings'
@@ -74,7 +73,6 @@ export default function App() {
               <Route path="payments"                   element={<Payments />} />
               <Route path="employees"                  element={<Employees />} />
               <Route path="channel-partners"           element={<ChannelPartners />} />
-              <Route path="inventory-overview"         element={<InventoryOverview />} />
               <Route path="settings"                   element={<Settings />} />
             </Route>
           </Routes>
