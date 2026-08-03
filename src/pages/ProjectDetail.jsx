@@ -713,7 +713,7 @@ function PLCSection({ proj, projectId, qc }) {
 function PlotsSection({ proj, projectId }) {
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState(null)
-  const [newPlot, setNewPlot] = useState({ plot_number:'', area_sqft:'', facing:'', corner_plot:false, road_width_ft:'', base_price_sqft:'' })
+  const [newPlot, setNewPlot] = useState({ plot_number:'', area_sqft:'', facing:'', corner_plot:false, road_width_ft:'', base_price_sqft:'', rate_per_cent:'' })
   const [editForm, setEditForm] = useState({})
   const [importing, setImporting] = useState(false)
 
@@ -776,8 +776,20 @@ function PlotsSection({ proj, projectId }) {
   const isCents = proj.unit_of_measure === 'cents'
   const CENTS_TO_SQFT = 435.6
 
-  const calcTotalPrice = (area_sqft, base_price_sqft) => {
-    if (!area_sqft || !base_price_sqft) return null
+  const calcTotalPrice = (area_sqft, base_price_sqft, rate_per_cent) => {
+    if (!area_sqft) return null
+    // For Cents-based projects, round the area to Cents at 2 decimals —
+    // the exact same rounding used for the displayed "X.XX Cents" figure
+    // — before multiplying. This keeps Total Price consistent with what's
+    // actually shown on screen (matches a manual calculator check), even
+    // though it's a hair less "precise" than using the raw unrounded area.
+    if (isCents) {
+      const cr = rate_per_cent != null ? parseFloat(rate_per_cent) : parseFloat(proj.sale_rate_per_cent)
+      if (!cr) return null
+      const areaCents = parseFloat((parseFloat(area_sqft) / CENTS_TO_SQFT).toFixed(2))
+      return Math.round(areaCents * cr)
+    }
+    if (!base_price_sqft) return null
     return Math.round(parseFloat(area_sqft) * parseFloat(base_price_sqft))
   }
 
@@ -786,7 +798,19 @@ function PlotsSection({ proj, projectId }) {
       if (!newPlot.plot_number) throw new Error('Plot number is required')
       if (!newPlot.area_sqft) throw new Error('Area is required')
       const area = parseFloat(newPlot.area_sqft)
-      const total = calcTotalPrice(area, newPlot.base_price_sqft || proj.sale_rate_per_sqft)
+
+      let ratePerCent = null
+      let basePriceSqft = null
+      if (isCents) {
+        ratePerCent = newPlot.rate_per_cent ? parseFloat(newPlot.rate_per_cent) : (proj.sale_rate_per_cent || null)
+        // Derived reference only — never read back for editing, so no
+        // precision loss accumulates from repeated round-trips.
+        basePriceSqft = ratePerCent ? ratePerCent / CENTS_TO_SQFT : null
+      } else {
+        basePriceSqft = newPlot.base_price_sqft ? parseFloat(newPlot.base_price_sqft) : (proj.sale_rate_per_sqft || null)
+      }
+      const total = calcTotalPrice(area, basePriceSqft, ratePerCent)
+
       const { error } = await supabase.from('plots').insert({
         project_id: projectId,
         plot_number: newPlot.plot_number.trim(),
@@ -794,7 +818,8 @@ function PlotsSection({ proj, projectId }) {
         facing: newPlot.facing || null,
         corner_plot: newPlot.corner_plot,
         road_width_ft: newPlot.road_width_ft ? parseFloat(newPlot.road_width_ft) : null,
-        base_price_sqft: newPlot.base_price_sqft ? parseFloat(newPlot.base_price_sqft) : (proj.sale_rate_per_sqft || null),
+        base_price_sqft: basePriceSqft,
+        rate_per_cent: ratePerCent,
         total_price: total,
         plot_type: 'plot',
         status: 'available',
@@ -805,7 +830,7 @@ function PlotsSection({ proj, projectId }) {
       toast.success('Plot added')
       refetch()
       setAdding(false)
-      setNewPlot({ plot_number:'', area_sqft:'', facing:'', corner_plot:false, road_width_ft:'', base_price_sqft:'' })
+      setNewPlot({ plot_number:'', area_sqft:'', facing:'', corner_plot:false, road_width_ft:'', base_price_sqft:'', rate_per_cent:'' })
     },
     onError: (e) => toast.error(e.message),
   })
@@ -813,13 +838,24 @@ function PlotsSection({ proj, projectId }) {
   const savePlot = useMutation({
     mutationFn: async () => {
       const area = parseFloat(editForm.area_sqft)
-      const total = calcTotalPrice(area, editForm.base_price_sqft)
+
+      let ratePerCent = null
+      let basePriceSqft = null
+      if (isCents) {
+        ratePerCent = editForm.rate_per_cent ? parseFloat(editForm.rate_per_cent) : null
+        basePriceSqft = ratePerCent ? ratePerCent / CENTS_TO_SQFT : null
+      } else {
+        basePriceSqft = editForm.base_price_sqft ? parseFloat(editForm.base_price_sqft) : null
+      }
+      const total = calcTotalPrice(area, basePriceSqft, ratePerCent)
+
       const { error } = await supabase.from('plots').update({
         area_sqft: area,
         facing: editForm.facing || null,
         corner_plot: editForm.corner_plot,
         road_width_ft: editForm.road_width_ft ? parseFloat(editForm.road_width_ft) : null,
-        base_price_sqft: editForm.base_price_sqft ? parseFloat(editForm.base_price_sqft) : null,
+        base_price_sqft: basePriceSqft,
+        rate_per_cent: ratePerCent,
         total_price: total,
       }).eq('id', editId)
       if (error) throw error
@@ -843,6 +879,9 @@ function PlotsSection({ proj, projectId }) {
       corner_plot: plot.corner_plot || false,
       road_width_ft: plot.road_width_ft || '',
       base_price_sqft: plot.base_price_sqft || '',
+      // Read the Cent rate directly from its own column — never converted
+      // from base_price_sqft, so no precision is lost on repeated edits.
+      rate_per_cent: plot.rate_per_cent || '',
     })
   }
 
@@ -963,7 +1002,9 @@ function PlotsSection({ proj, projectId }) {
       const areaSqft = rawArea > 10000 ? parseFloat((rawArea / FACTOR).toFixed(1)) : rawArea
 
       const basePriceSqft = proj.sale_rate_per_sqft || null
-      const totalPrice = areaSqft && basePriceSqft ? Math.round(areaSqft * basePriceSqft) : null
+      const totalPrice = isCents && proj.sale_rate_per_cent && areaSqft
+        ? Math.round(areaSqft * (proj.sale_rate_per_cent / CENTS_TO_SQFT))
+        : (areaSqft && basePriceSqft ? Math.round(areaSqft * basePriceSqft) : null)
 
       const { error } = await supabase.from('plots').insert({
         project_id:     projectId,
@@ -975,6 +1016,7 @@ function PlotsSection({ proj, projectId }) {
         bg_width:       bgWidth,
         bg_height:      bgHeight,
         base_price_sqft: basePriceSqft,
+        rate_per_cent:  isCents ? (proj.sale_rate_per_cent || null) : null,
         total_price:    totalPrice,
       })
       if (!error) imported++; else { console.error(error); skipped++ }
@@ -1030,7 +1072,10 @@ function PlotsSection({ proj, projectId }) {
               </select>
             </div>
             <div><div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Road Width (ft)</div><input style={tinp} type="number" value={newPlot.road_width_ft} onChange={e=>setNewPlot(f=>({...f,road_width_ft:e.target.value}))} /></div>
-            <div><div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Base Price/Sq.ft</div><input style={tinp} type="number" value={newPlot.base_price_sqft} onChange={e=>setNewPlot(f=>({...f,base_price_sqft:e.target.value}))} placeholder={proj.sale_rate_per_sqft || ''} /></div>
+            <div>
+              <div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>{isCents ? 'Rate/Cent' : 'Base Price/Sq.ft'}</div>
+              <input style={tinp} type="number" value={isCents ? newPlot.rate_per_cent : newPlot.base_price_sqft} onChange={e=>setNewPlot(f=>(isCents ? {...f,rate_per_cent:e.target.value} : {...f,base_price_sqft:e.target.value}))} placeholder={(isCents ? proj.sale_rate_per_cent : proj.sale_rate_per_sqft) || ''} />
+            </div>
             <div style={{display:'flex',alignItems:'flex-end',paddingBottom:'2px',gap:'6px'}}>
               <input type="checkbox" checked={newPlot.corner_plot} onChange={e=>setNewPlot(f=>({...f,corner_plot:e.target.checked}))} style={{width:'14px',height:'14px'}} />
               <span style={{fontSize:'12px',color:'#374151'}}>Corner</span>
@@ -1075,7 +1120,7 @@ function PlotsSection({ proj, projectId }) {
                         </select>
                       </td>
                       <td style={{padding:'8px 6px'}}><input style={{...tinp,width:'70px'}} type="number" value={editForm.road_width_ft} onChange={e=>setEditForm(f=>({...f,road_width_ft:e.target.value}))} /></td>
-                      <td style={{padding:'8px 6px'}}><input style={{...tinp,width:'90px'}} type="number" value={editForm.base_price_sqft} onChange={e=>setEditForm(f=>({...f,base_price_sqft:e.target.value}))} /></td>
+                      <td style={{padding:'8px 6px'}}><input style={{...tinp,width:'90px'}} type="number" title={isCents ? 'Rate/Cent' : 'Base Price/Sq.ft'} value={isCents ? editForm.rate_per_cent : editForm.base_price_sqft} onChange={e=>setEditForm(f=>(isCents ? {...f,rate_per_cent:e.target.value} : {...f,base_price_sqft:e.target.value}))} /></td>
                       <td style={{padding:'8px 6px',textAlign:'center'}}><input type="checkbox" checked={editForm.corner_plot} onChange={e=>setEditForm(f=>({...f,corner_plot:e.target.checked}))} /></td>
                       <td style={{padding:'8px 6px'}}>
                         <span style={{padding:'2px 8px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:'#dcfce7',color:'#166534'}}>{p.status}</span>
@@ -1091,7 +1136,7 @@ function PlotsSection({ proj, projectId }) {
                       <td style={{padding:'8px 10px',color:'#374151'}}>{fmtArea(p.area_sqft)}</td>
                       <td style={{padding:'8px 10px',color:'#64748b'}}>{p.facing || '—'}</td>
                       <td style={{padding:'8px 10px',color:'#64748b'}}>{p.road_width_ft ? `${p.road_width_ft} ft` : '—'}</td>
-                      <td style={{padding:'8px 10px',color:'#374151'}}>{fmt(p.base_price_sqft)}/sqft</td>
+                      <td style={{padding:'8px 10px',color:'#374151'}}>{isCents ? `${fmt(p.rate_per_cent)}/Cent` : `${fmt(p.base_price_sqft)}/sqft`}</td>
                       <td style={{padding:'8px 10px'}}>
                         {projectPLCs?.length > 0 && (
                           <div style={{display:'flex',flexWrap:'wrap',gap:'3px'}}>
@@ -1115,9 +1160,18 @@ function PlotsSection({ proj, projectId }) {
                         {!projectPLCs?.length && <span style={{color:'#94a3b8',fontSize:'12px'}}>—</span>}
                       </td>
                       <td style={{padding:'8px 10px',color:'#374151',fontWeight:600}}>
-                        {p.area_sqft && p.base_price_sqft
-                          ? fmt(Math.round(p.area_sqft * (parseFloat(p.base_price_sqft) + getPlotPLCTotal(p))))
-                          : fmt(p.total_price)}
+                        {(() => {
+                          if (!p.area_sqft) return fmt(p.total_price)
+                          const plcAmount = p.area_sqft * getPlotPLCTotal(p)
+                          if (isCents) {
+                            const cr = p.rate_per_cent || proj.sale_rate_per_cent
+                            if (!cr) return fmt(p.total_price)
+                            const areaCents = parseFloat((p.area_sqft / CENTS_TO_SQFT).toFixed(2))
+                            return fmt(Math.round(areaCents * cr) + Math.round(plcAmount))
+                          }
+                          if (!p.base_price_sqft) return fmt(p.total_price)
+                          return fmt(Math.round(p.area_sqft * parseFloat(p.base_price_sqft) + plcAmount))
+                        })()}
                       </td>
                       <td style={{padding:'8px 10px',textAlign:'center'}}>{p.corner_plot ? '✅' : '—'}</td>
                       <td style={{padding:'8px 10px'}}>
