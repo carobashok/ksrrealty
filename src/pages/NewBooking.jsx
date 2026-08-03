@@ -31,7 +31,14 @@ export default function NewBooking() {
   const [newCustomer, setNewCustomer] = useState({ name: '', mobile: '', email: '', address: '' });
 
   const [registrantSame, setRegistrantSame] = useState(true);
-  const [registrant, setRegistrant] = useState({ name: '', relation: '', pan: '', aadhaar: '' });
+  const [registrants, setRegistrants] = useState([{ name: '', relation: '', pan: '', aadhaar: '' }]);
+
+  const addRegistrant = () =>
+    setRegistrants((r) => [...r, { name: '', relation: '', pan: '', aadhaar: '' }]);
+  const removeRegistrant = (index) =>
+    setRegistrants((r) => r.filter((_, i) => i !== index));
+  const updateRegistrant = (index, field, value) =>
+    setRegistrants((r) => r.map((reg, i) => (i === index ? { ...reg, [field]: value } : reg)));
 
   const [agreedRate, setAgreedRate] = useState('');
   const [agreedRateCent, setAgreedRateCent] = useState('');
@@ -308,8 +315,8 @@ export default function NewBooking() {
       if (!tokenAdvance || Number(tokenAdvance) <= 0) throw new Error('Enter advance amount');
       if (!assignedExecutiveId && source !== 'channel_partner')
         throw new Error('Select the assigned executive');
-      if (!registrantSame && !registrant.name.trim())
-        throw new Error('Enter registrant name, or toggle "Same as customer"');
+      if (!registrantSame && registrants.some((r) => !r.name.trim()))
+        throw new Error('Enter a name for every registrant, or toggle "Same as customer"');
 
       const validIncentiveRows = incentiveRows.filter(
         (r) => r.employee_id && Number(r.amount) > 0
@@ -360,10 +367,10 @@ export default function NewBooking() {
         landowner_share_amt: calc.landownerShareAmt,
         ksr_owes_landowner: selectedProject.is_jv ? calc.ksrOwesLandowner : null,
         registrant_same_as_customer: registrantSame,
-        registrant_name: registrantSame ? null : registrant.name.trim(),
-        registrant_pan: registrantSame ? null : registrant.pan.trim() || null,
-        registrant_aadhaar: registrantSame ? null : registrant.aadhaar.trim() || null,
-        registrant_relation: registrantSame ? null : registrant.relation || null,
+        registrant_name: registrantSame ? null : registrants[0]?.name.trim() || null,
+        registrant_pan: registrantSame ? null : registrants[0]?.pan.trim() || null,
+        registrant_aadhaar: registrantSame ? null : registrants[0]?.aadhaar.trim() || null,
+        registrant_relation: registrantSame ? null : registrants[0]?.relation || null,
         status: 'booked',
         notes: bookingNotes.trim() || null,
       };
@@ -375,6 +382,28 @@ export default function NewBooking() {
         .select()
         .single();
       if (bookingErr) throw bookingErr;
+
+      // Insert the full registrant list (supports multiple joint registrants,
+      // e.g. son + wife) — legacy registrant_* columns above only hold the first.
+      if (!registrantSame) {
+        const registrantRows = registrants
+          .filter((r) => r.name.trim())
+          .map((r, i) => ({
+            booking_id: booking.id,
+            name: r.name.trim(),
+            relation: r.relation || null,
+            pan: r.pan.trim() || null,
+            aadhaar: r.aadhaar.trim() || null,
+            sort_order: i,
+          }));
+        if (registrantRows.length > 0) {
+          const { error: registrantErr } = await supabase
+            .schema('ksr')
+            .from('booking_registrants')
+            .insert(registrantRows);
+          if (registrantErr) throw registrantErr;
+        }
+      }
 
       // Insert incentive split (booking_commissions)
       if (validIncentiveRows.length > 0 && incentivePool > 0) {
@@ -617,47 +646,69 @@ export default function NewBooking() {
           Registration will be in the customer's own name
         </label>
         {!registrantSame && (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Registrant Name *">
-              <input
-                type="text"
-                value={registrant.name}
-                onChange={(e) => setRegistrant({ ...registrant, name: e.target.value })}
-                className="input"
-              />
-            </Field>
-            <Field label="Relation to Customer">
-              <select
-                value={registrant.relation}
-                onChange={(e) => setRegistrant({ ...registrant, relation: e.target.value })}
-                className="input"
-              >
-                <option value="">Select...</option>
-                {RELATIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="PAN">
-              <input
-                type="text"
-                value={registrant.pan}
-                onChange={(e) =>
-                  setRegistrant({ ...registrant, pan: e.target.value.toUpperCase() })
-                }
-                className="input"
-              />
-            </Field>
-            <Field label="Aadhaar">
-              <input
-                type="text"
-                value={registrant.aadhaar}
-                onChange={(e) => setRegistrant({ ...registrant, aadhaar: e.target.value })}
-                className="input"
-              />
-            </Field>
+          <div className="space-y-4">
+            {registrants.map((reg, index) => (
+              <div key={index} className="border border-slate-200 rounded-lg p-3 relative">
+                {registrants.length > 1 && (
+                  <button
+                    onClick={() => removeRegistrant(index)}
+                    className="absolute top-2 right-2 text-slate-400 hover:text-red-600"
+                    title="Remove this registrant"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+                <div className="text-xs font-medium text-slate-500 mb-2">
+                  Registrant {index + 1}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Name *">
+                    <input
+                      type="text"
+                      value={reg.name}
+                      onChange={(e) => updateRegistrant(index, 'name', e.target.value)}
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="Relation to Customer">
+                    <select
+                      value={reg.relation}
+                      onChange={(e) => updateRegistrant(index, 'relation', e.target.value)}
+                      className="input"
+                    >
+                      <option value="">Select...</option>
+                      {RELATIONS.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="PAN">
+                    <input
+                      type="text"
+                      value={reg.pan}
+                      onChange={(e) => updateRegistrant(index, 'pan', e.target.value.toUpperCase())}
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="Aadhaar">
+                    <input
+                      type="text"
+                      value={reg.aadhaar}
+                      onChange={(e) => updateRegistrant(index, 'aadhaar', e.target.value)}
+                      className="input"
+                    />
+                  </Field>
+                </div>
+              </div>
+            ))}
+            <button
+              onClick={addRegistrant}
+              className="flex items-center gap-1 text-sm text-[#0a1f44] hover:underline"
+            >
+              <Plus size={14} /> Add another registrant
+            </button>
           </div>
         )}
       </Section>

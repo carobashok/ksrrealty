@@ -1,5 +1,5 @@
 // src/pages/BookingDetail.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
@@ -45,10 +45,16 @@ export default function BookingDetail() {
   const [mode, setMode] = useState('cash');
   const [referenceNo, setReferenceNo] = useState('');
   const [notes, setNotes] = useState('');
+  const [isConstructionPayment, setIsConstructionPayment] = useState(false);
 
   const [editingPayment, setEditingPayment] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const [constructionIncluded, setConstructionIncluded] = useState(false);
+  const [constructionArea, setConstructionArea] = useState('');
+  const [constructionRate, setConstructionRate] = useState('');
+  const [constructionSynced, setConstructionSynced] = useState(false);
 
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -131,6 +137,7 @@ export default function BookingDetail() {
         mode,
         reference_no: referenceNo.trim() || null,
         notes: notes.trim() || null,
+        is_construction: paymentType === 'company_share' ? isConstructionPayment : false,
       });
       if (error) throw error;
     },
@@ -143,6 +150,7 @@ export default function BookingDetail() {
       setReferenceNo('');
       setNotes('');
       setLandownerId('');
+      setIsConstructionPayment(false);
     },
     onError: (err) => toast.error(err.message || 'Failed to record payment'),
   });
@@ -157,6 +165,7 @@ export default function BookingDetail() {
       mode: p.mode || 'cash',
       reference_no: p.reference_no || '',
       notes: p.notes || '',
+      is_construction: p.is_construction || false,
     });
   };
 
@@ -177,6 +186,7 @@ export default function BookingDetail() {
           mode: editForm.mode,
           reference_no: editForm.reference_no.trim() || null,
           notes: editForm.notes.trim() || null,
+          is_construction: editForm.payment_type === 'company_share' ? editForm.is_construction : false,
         })
         .eq('id', editingPayment.id);
       if (error) throw error;
@@ -239,6 +249,46 @@ export default function BookingDetail() {
     onError: (err) => toast.error(err.message || 'Failed to update status'),
   });
 
+  // Sync construction fields from the booking once it loads, only once —
+  // after that, the checkbox/fields are fully user-controlled.
+  useEffect(() => {
+    if (booking && !constructionSynced) {
+      const hasConstruction = booking.construction_amount != null;
+      setConstructionIncluded(hasConstruction);
+      setConstructionArea(booking.construction_area_sqft ?? '');
+      setConstructionRate(booking.construction_rate_per_sqft ?? '');
+      setConstructionSynced(true);
+    }
+  }, [booking, constructionSynced]);
+
+  const constructionAmount =
+    constructionIncluded && constructionArea && constructionRate
+      ? Math.round(Number(constructionArea) * Number(constructionRate))
+      : 0;
+
+  const saveConstructionMutation = useMutation({
+    mutationFn: async () => {
+      const payload = constructionIncluded
+        ? {
+            construction_area_sqft: constructionArea ? Number(constructionArea) : null,
+            construction_rate_per_sqft: constructionRate ? Number(constructionRate) : null,
+            construction_amount: constructionAmount || null,
+          }
+        : {
+            construction_area_sqft: null,
+            construction_rate_per_sqft: null,
+            construction_amount: null,
+          };
+      const { error } = await supabase.schema('ksr').from('bookings').update(payload).eq('id', bookingId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(constructionIncluded ? 'Construction details saved' : 'Construction details cleared');
+      queryClient.invalidateQueries({ queryKey: ['booking-detail', bookingId] });
+    },
+    onError: (err) => toast.error(err.message || 'Failed to save construction details'),
+  });
+
   const inr = (n) =>
     new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -255,7 +305,7 @@ export default function BookingDetail() {
   const companyPaid = payments
     .filter((p) => p.payment_type === 'company_share')
     .reduce((sum, p) => sum + Number(p.amount), 0);
-  const companyDue = Number(booking.company_share_amt) || 0;
+  const companyDue = (Number(booking.company_share_amt) || 0) + (Number(booking.construction_amount) || 0);
   const companyBalance = companyDue - companyPaid;
 
   // Landowner-wise ledger (JV only)
@@ -269,7 +319,9 @@ export default function BookingDetail() {
 
   const totalPaid =
     companyPaid + landownerLedger.reduce((sum, lo) => sum + lo.paid, 0);
-  const totalDue = Number(booking.total_consideration) || 0;
+  const landDue = Number(booking.total_consideration) || 0;
+  const constructionDue = Number(booking.construction_amount) || 0;
+  const totalDue = landDue + constructionDue;
   const totalBalance = totalDue - totalPaid;
 
   return (
@@ -407,13 +459,70 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {/* Construction Details — checkbox pattern, matches "Registration same as customer" */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 uppercase tracking-wide cursor-pointer">
+          <input
+            type="checkbox"
+            checked={constructionIncluded}
+            onChange={(e) => setConstructionIncluded(e.target.checked)}
+          />
+          Construction Included
+        </label>
+
+        {constructionIncluded && (
+          <div className="mt-4">
+            <div className="grid grid-cols-3 gap-4 text-sm mb-4">
+              <div>
+                <label className="text-xs font-medium text-slate-500">Construction Area (Sq.ft)</label>
+                <input
+                  type="number"
+                  value={constructionArea}
+                  onChange={(e) => setConstructionArea(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500">Construction Rate (₹/Sq.ft)</label>
+                <input
+                  type="number"
+                  value={constructionRate}
+                  onChange={(e) => setConstructionRate(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500">Amount</label>
+                <div className="mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700">
+                  {inr(constructionAmount)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end mt-2">
+          <button
+            onClick={() => saveConstructionMutation.mutate()}
+            disabled={saveConstructionMutation.isPending}
+            className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg hover:bg-[#122a5c] disabled:opacity-50 text-sm"
+          >
+            {saveConstructionMutation.isPending ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+
       {/* Overall summary */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
           Overall Summary
         </h3>
         <div className="grid grid-cols-3 gap-4 text-sm">
-          <SummaryBox label="Total Consideration" value={inr(totalDue)} />
+          <SummaryBox
+            label="Total Consideration"
+            value={inr(totalDue)}
+            subtitle={constructionDue > 0 ? `Land: ${inr(landDue)} · Construction: ${inr(constructionDue)}` : null}
+          />
           <SummaryBox label="Total Paid" value={inr(totalPaid)} tone="text-green-700" />
           <SummaryBox
             label="Balance Due"
@@ -528,6 +637,17 @@ export default function BookingDetail() {
               )}
             </div>
 
+            {paymentType === 'company_share' && booking.construction_amount != null && (
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={isConstructionPayment}
+                  onChange={(e) => setIsConstructionPayment(e.target.checked)}
+                />
+                This is a construction payment
+              </label>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-500">Amount *</label>
@@ -633,6 +753,11 @@ export default function BookingDetail() {
                       {p.payment_type === 'landowner_share'
                         ? `Landowner${lo ? ` — ${lo.landowner_name}` : ''}`
                         : 'Company (KSR)'}
+                      {p.is_construction && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 border border-orange-200">
+                          🏗 Construction
+                        </span>
+                      )}
                       {p.notes ? <span className="text-slate-400"> · {p.notes}</span> : ''}
                     </td>
                     <td className="py-2 text-slate-600">{modeLabel(p.mode) || '—'}</td>
@@ -717,6 +842,17 @@ export default function BookingDetail() {
                   </div>
                 )}
               </div>
+
+              {editForm.payment_type === 'company_share' && booking.construction_amount != null && (
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={editForm.is_construction}
+                    onChange={(e) => setEditForm({ ...editForm, is_construction: e.target.checked })}
+                  />
+                  This is a construction payment
+                </label>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -902,11 +1038,12 @@ export default function BookingDetail() {
   );
 }
 
-function SummaryBox({ label, value, tone = 'text-slate-800', compact }) {
+function SummaryBox({ label, value, tone = 'text-slate-800', compact, subtitle }) {
   return (
     <div className={compact ? '' : 'bg-slate-50 rounded-lg p-3'}>
       <div className="text-xs text-slate-400">{label}</div>
       <div className={`font-semibold ${tone}`}>{value}</div>
+      {subtitle && <div className="text-xs text-slate-400 mt-1">{subtitle}</div>}
     </div>
   );
 }
