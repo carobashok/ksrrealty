@@ -666,17 +666,8 @@ export default function NewBooking() {
       {selectedPlot && selectedProject && calc && (
         <Section title="Sale Value & Split">
           <div className="grid grid-cols-3 gap-4 mb-4">
-            <Field label={isCentsProject ? 'Area' : 'Area (Sq.ft)'}>
-              <input
-                type="text"
-                value={
-                  isCentsProject
-                    ? `${(calc.area / CENTS_TO_SQFT).toFixed(2)} Cents (${calc.area} Sq.ft)`
-                    : calc.area
-                }
-                disabled
-                className="input bg-slate-50"
-              />
+            <Field label="Area (Sq.ft)">
+              <input type="text" value={calc.area} disabled className="input bg-slate-50" />
             </Field>
             {isCentsProject ? (
               <Field label="Agreed Rate (₹/Cent)">
