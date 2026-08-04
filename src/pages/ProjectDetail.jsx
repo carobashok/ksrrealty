@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Map, Pencil, X, Check, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import DocumentsPanel from '../components/DocumentsPanel'
 
 const CENTS_TO_SQFT = 435.6
 const fmt  = (n) => n ? '₹' + Math.round(parseFloat(n)).toLocaleString('en-IN') : '—'
@@ -1291,6 +1292,7 @@ export default function ProjectDetail() {
       <RatesSection   proj={proj} projectId={projectId} qc={qc} />
       <AssignedEmployeesSection projectId={projectId} qc={qc} />
       <AssignedChannelPartnersSection projectId={projectId} qc={qc} />
+      <DocumentsPanel projectId={projectId} />
       <LandownersSection proj={proj} projectId={projectId} qc={qc} />
       <PLCSection proj={proj} projectId={projectId} qc={qc} />
       <PlotsSection proj={proj} projectId={projectId} />
