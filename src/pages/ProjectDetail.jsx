@@ -1007,18 +1007,22 @@ function PlotsSection({ proj, projectId }) {
         ? Math.round(areaSqft * (proj.sale_rate_per_cent / CENTS_TO_SQFT))
         : (areaSqft && basePriceSqft ? Math.round(areaSqft * basePriceSqft) : null)
 
+      // Optional plot_type column — 'plot', 'road', 'park', etc.
+      // Defaults to 'plot' if the column is absent or blank.
+      const plotType = (row.plot_type || row.type || 'plot').toLowerCase().trim()
+
       const { error } = await supabase.from('plots').insert({
         project_id:     projectId,
         plot_number:    plotNumber,
         area_sqft:      areaSqft || null,
-        plot_type:      'plot',
-        status:         'available',
+        plot_type:      plotType,
+        status:         plotType === 'plot' ? 'available' : null,
         polygon_coords: polygonCoords,
         bg_width:       bgWidth,
         bg_height:      bgHeight,
-        base_price_sqft: basePriceSqft,
-        rate_per_cent:  isCents ? (proj.sale_rate_per_cent || null) : null,
-        total_price:    totalPrice,
+        base_price_sqft: plotType === 'plot' ? basePriceSqft : null,
+        rate_per_cent:  (plotType === 'plot' && isCents) ? (proj.sale_rate_per_cent || null) : null,
+        total_price:    plotType === 'plot' ? totalPrice : null,
       })
       if (!error) imported++; else { console.error(error); skipped++ }
     }

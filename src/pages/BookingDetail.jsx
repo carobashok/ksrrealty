@@ -577,14 +577,27 @@ export default function BookingDetail() {
           </div>
 
           {booking.ksr_owes_landowner != null && (
-            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-amber-800">KSR Owes Landowner (overall, settled later)</span>
-                <span className="font-semibold text-amber-900">{inr(booking.ksr_owes_landowner)}</span>
+            <div className="mt-4 space-y-2">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-amber-800">KSR Owes Landowner (overall, settled later)</span>
+                  <span className="font-semibold text-amber-900">{inr(booking.ksr_owes_landowner)}</span>
+                </div>
+                <p className="text-xs text-amber-700 mt-1">
+                  Snapshot at booking time — (plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
+                </p>
               </div>
-              <p className="text-xs text-amber-700 mt-1">
-                Snapshot at booking time — (plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
-              </p>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-green-800">KSR Net Realisation</span>
+                  <span className="font-semibold text-green-900">
+                    {inr((Number(booking.company_share_amt) || 0) - (Number(booking.ksr_owes_landowner) || 0))}
+                  </span>
+                </div>
+                <p className="text-xs text-green-700 mt-1">
+                  Company Share − KSR Owes Landowner
+                </p>
+              </div>
             </div>
           )}
         </div>

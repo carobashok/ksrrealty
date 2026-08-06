@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { Search, X, Plus } from 'lucide-react';
 
-const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Other'];
+const RELATIONS = ['Self', 'Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Other'];
 const CENTS_TO_SQFT = 435.6;
 // Must exactly match the DB check constraint on payments.mode
 const PAYMENT_MODES = [
@@ -46,12 +46,15 @@ export default function NewBooking() {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountApprovedBy, setDiscountApprovedBy] = useState('');
   const [discountNotes, setDiscountNotes] = useState('');
+  const [regChargePctOverride, setRegChargePctOverride] = useState(''); // '' = use project default
+  const [regDocPaymentMode, setRegDocPaymentMode] = useState('collected_by_ksr'); // 'collected_by_ksr' | 'paid_directly'
 
   const [source, setSource] = useState('direct');
   const [channelPartnerId, setChannelPartnerId] = useState('');
   const [assignedExecutiveId, setAssignedExecutiveId] = useState('');
 
   const [incentiveRows, setIncentiveRows] = useState([{ employee_id: '', amount: '' }]);
+  const [incentivePoolOverride, setIncentivePoolOverride] = useState(''); // '' = use project default
 
   const [tokenAdvance, setTokenAdvance] = useState('');
   const [tokenDate, setTokenDate] = useState(new Date().toISOString().slice(0, 10));
@@ -230,8 +233,11 @@ export default function NewBooking() {
     const area = Number(selectedPlot.area_sqft) || 0;
     const premium = Number(selectedPlot.premium_amount) || 0;
     const discount = Number(discountAmount) || 0;
-    const regPct = Number(selectedProject.reg_charge_pct) || 0;
-    const docCharge = Number(selectedProject.document_charge_amount) || 0;
+    // Use overridden reg % if set, else fall back to project default
+    const regPct = regChargePctOverride !== '' ? Number(regChargePctOverride) : (Number(selectedProject.reg_charge_pct) || 0);
+    // If paid directly (channel partner), zero out reg & doc charges from KSR's calculation
+    const paidDirectly = regDocPaymentMode === 'paid_directly';
+    const docCharge = paidDirectly ? 0 : (Number(selectedProject.document_charge_amount) || 0);
     const glvRate = Number(selectedProject.guideline_value_sqft) || 0;
 
     const landCostBeforeDiscount = isCentsProject
@@ -239,7 +245,7 @@ export default function NewBooking() {
       : area * effectiveRate + premium;
     const landCost = landCostBeforeDiscount - discount;
     const glvTotal = area * glvRate;
-    const regChargeAmount = (glvTotal * regPct) / 100;
+    const regChargeAmount = paidDirectly ? 0 : (glvTotal * regPct) / 100;
     const totalConsideration = landCost + regChargeAmount + docCharge;
 
     let landownerShareAmt = 0;
@@ -253,7 +259,7 @@ export default function NewBooking() {
       // What KSR itself will separately owe the landowner later:
       // (plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
       const landownerRatePerCent = Number(selectedProject.landowner_rate_per_cent) || 0;
-      const areaCents = area / CENTS_TO_SQFT;
+      const areaCents = parseFloat((area / CENTS_TO_SQFT).toFixed(2)); // 2dp — matches landCost rounding
       ksrOwesLandowner = (areaCents * landownerRatePerCent) - glvTotal;
     }
 
@@ -274,10 +280,10 @@ export default function NewBooking() {
       companySharePct,
       ksrOwesLandowner,
     };
-  }, [selectedPlot, selectedProject, effectiveRate, effectiveRateCent, isCentsProject, discountAmount]);
+  }, [selectedPlot, selectedProject, effectiveRate, effectiveRateCent, isCentsProject, discountAmount, regChargePctOverride, regDocPaymentMode]);
 
   // ---- Incentive split ----
-  const incentivePool = Number(selectedProject?.incentive_amount_per_plot) || 0;
+  const incentivePool = incentivePoolOverride !== '' ? Number(incentivePoolOverride) : (Number(selectedProject?.incentive_amount_per_plot) || 0);
   const incentiveAllocated = incentiveRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
   const incentiveRemaining = incentivePool - incentiveAllocated;
   const incentiveOverAllocated = incentiveRemaining < 0;
@@ -497,6 +503,7 @@ export default function NewBooking() {
               onChange={(e) => {
                 setProjectId(e.target.value);
                 setPlotId('');
+                setIncentivePoolOverride('');
               }}
               className="input"
             >
@@ -783,13 +790,39 @@ export default function NewBooking() {
             )}
           </div>
 
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <Field label="Registration Charge %">
+              <select
+                value={regChargePctOverride !== '' ? regChargePctOverride : (selectedProject?.reg_charge_pct ?? 9)}
+                onChange={(e) => setRegChargePctOverride(e.target.value)}
+                className="input"
+              >
+                <option value="9">9% (Standard)</option>
+                <option value="8">8% (Woman Registrant / below ₹10L)</option>
+              </select>
+            </Field>
+            <Field label="Reg & Doc Charge Collection">
+              <select
+                value={regDocPaymentMode}
+                onChange={(e) => setRegDocPaymentMode(e.target.value)}
+                className="input"
+              >
+                <option value="collected_by_ksr">Collected by KSR</option>
+                <option value="paid_directly">Paid Directly (Channel Partner)</option>
+              </select>
+            </Field>
+          </div>
+
           <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm mb-4">
             <Row label="Land Cost" value={inr(calc.landCost)} />
             <Row
-              label={`Reg Charge (${selectedProject.reg_charge_pct ?? 0}% of GLV Total)`}
+              label={`Reg Charge (${regChargePctOverride !== '' ? regChargePctOverride : (selectedProject.reg_charge_pct ?? 0)}% of GLV Total)${regDocPaymentMode === 'paid_directly' ? ' — Paid Directly' : ''}`}
               value={inr(calc.regChargeAmount)}
             />
-            <Row label="Document Charge" value={inr(calc.docCharge)} />
+            <Row
+              label={`Document Charge${regDocPaymentMode === 'paid_directly' ? ' — Paid Directly' : ''}`}
+              value={inr(calc.docCharge)}
+            />
           </div>
 
           <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
@@ -902,13 +935,25 @@ export default function NewBooking() {
       {/* Incentive Split */}
       {selectedProject && (
         <Section title="Incentive Split">
-          <div className="mb-3 text-sm text-slate-600">
-            Pool for this plot: <span className="font-semibold">{inr(incentivePool)}</span>
-            {incentivePool === 0 && (
-              <span className="text-amber-600 ml-2">
-                (no incentive rate set for this project yet)
-              </span>
-            )}
+          <div className="mb-4">
+            <label className="text-xs font-medium text-slate-500">Incentive Pool for this Plot (₹)</label>
+            <div className="flex items-center gap-3 mt-1">
+              <input
+                type="number"
+                value={incentivePoolOverride !== '' ? incentivePoolOverride : (selectedProject?.incentive_amount_per_plot ?? '')}
+                onChange={(e) => setIncentivePoolOverride(e.target.value)}
+                placeholder="Enter incentive pool amount"
+                className="input w-48"
+              />
+              {incentivePoolOverride !== '' && Number(incentivePoolOverride) !== Number(selectedProject?.incentive_amount_per_plot) && (
+                <span className="text-xs text-amber-600">
+                  Overridden (project default: {inr(selectedProject?.incentive_amount_per_plot)})
+                </span>
+              )}
+              {incentivePool === 0 && incentivePoolOverride === '' && (
+                <span className="text-xs text-amber-600">No incentive rate set for this project yet</span>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
