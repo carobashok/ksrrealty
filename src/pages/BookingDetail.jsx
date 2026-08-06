@@ -70,6 +70,12 @@ export default function BookingDetail() {
   const [refundReference, setRefundReference] = useState('');
   const [refundNotes, setRefundNotes] = useState('');
 
+  // Cancellation fields
+  const [cancellationDate, setCancellationDate] = useState('');
+  const [cancellationReason, setCancellationReason] = useState('customer_request');
+  const [forfeitureAmount, setForfeitureAmount] = useState(0);
+  const [cancellationNotes, setCancellationNotes] = useState('');
+
   const { data: booking, isLoading } = useQuery({
     queryKey: ['booking-detail', bookingId],
     queryFn: async () => {
@@ -220,6 +226,11 @@ export default function BookingDetail() {
     setAgreementDate(booking.agreement_signed_date || new Date().toISOString().slice(0, 10));
     setRegistrationDate(booking.registration_date || new Date().toISOString().slice(0, 10));
     setRegistrationDocNo(booking.registration_doc_no || '');
+    // Init cancellation fields
+    setCancellationDate(new Date().toISOString().slice(0, 10));
+    setCancellationReason('customer_request');
+    setForfeitureAmount(0);
+    setCancellationNotes('');
     setShowStatusModal(true);
   };
 
@@ -238,8 +249,21 @@ export default function BookingDetail() {
         payload.registration_date = registrationDate;
         payload.registration_doc_no = registrationDocNo.trim();
       }
+      if (status === 'cancelled') {
+        if (!cancellationDate) throw new Error('Enter the cancellation date');
+        const totalPaid = booking.payments?.reduce((s, p) => s + Number(p.amount), 0) || 0;
+        payload.cancellation_date = cancellationDate;
+        payload.cancellation_reason = cancellationReason;
+        payload.forfeiture_amount = Number(forfeitureAmount) || 0;
+        payload.refund_due = Math.max(0, totalPaid - (Number(forfeitureAmount) || 0));
+        payload.cancellation_notes = cancellationNotes || null;
+      }
       const { error } = await supabase.schema('ksr').from('bookings').update(payload).eq('id', bookingId);
       if (error) throw error;
+      // Flip plot back to available on cancellation
+      if (status === 'cancelled' && booking.plot_id) {
+        await supabase.schema('ksr').from('plots').update({ status: 'available' }).eq('id', booking.plot_id);
+      }
     },
     onSuccess: () => {
       toast.success('Status updated');
@@ -386,7 +410,7 @@ export default function BookingDetail() {
                     onClick={() => {
                       setShowStatusMenu(false);
                       if (s === booking.status) return;
-                      if (s === 'agreement_signed' || s === 'registered') {
+                      if (s === 'agreement_signed' || s === 'registered' || s === 'cancelled') {
                         openStatusModal(s);
                       } else {
                         statusChangeMutation.mutate(s);
@@ -961,15 +985,17 @@ export default function BookingDetail() {
             </div>
 
             <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-slate-500">Agreement Signed Date</label>
-                <input
-                  type="date"
-                  value={agreementDate}
-                  onChange={(e) => setAgreementDate(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
-                />
-              </div>
+              {newStatus !== 'cancelled' && (
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Agreement Signed Date</label>
+                  <input
+                    type="date"
+                    value={agreementDate}
+                    onChange={(e) => setAgreementDate(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+              )}
 
               {newStatus === 'registered' && (
                 <>
@@ -992,6 +1018,60 @@ export default function BookingDetail() {
                       placeholder="e.g. Doc No. 1234/2026"
                     />
                   </div>
+                </>
+              )}
+
+              {newStatus === 'cancelled' && (
+                <>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Cancellation Date *</label>
+                    <input
+                      type="date"
+                      value={cancellationDate}
+                      onChange={(e) => setCancellationDate(e.target.value)}
+                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Reason</label>
+                    <select
+                      value={cancellationReason}
+                      onChange={(e) => setCancellationReason(e.target.value)}
+                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                    >
+                      <option value="customer_request">Customer Request</option>
+                      <option value="non_payment">Non Payment</option>
+                      <option value="legal_issue">Legal Issue</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Forfeiture Amount (₹)</label>
+                    <input
+                      type="number"
+                      value={forfeitureAmount}
+                      onChange={(e) => setForfeitureAmount(e.target.value)}
+                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                      placeholder="0"
+                    />
+                    <p className="text-xs text-slate-400 mt-1">
+                      Refund Due = Total Paid − Forfeiture (auto-calculated on save)
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Notes</label>
+                    <textarea
+                      value={cancellationNotes}
+                      onChange={(e) => setCancellationNotes(e.target.value)}
+                      rows={2}
+                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  {booking?.is_jv && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                      ⚠️ This is a JV plot — coordinate landowner payment refund separately.
+                    </div>
+                  )}
                 </>
               )}
             </div>

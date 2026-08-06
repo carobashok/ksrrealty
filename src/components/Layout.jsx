@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Users, FileText,
-  CreditCard, UserCog, ChevronRight, ChevronDown, Map, Settings, LogOut, Handshake, FolderCog
+  CreditCard, UserCog, ChevronRight, ChevronDown, Map, Settings, LogOut, Handshake, FolderCog, XCircle, ArrowDownLeft
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 
@@ -22,7 +22,9 @@ const nav = [
     ],
   },
   { to: '/bookings',   label: 'Bookings',         icon: FileText },
-  { to: '/payments',   label: 'Payments',         icon: CreditCard },
+  { to: '/receipts',      label: 'Receipts',         icon: ArrowDownLeft },
+  { to: '/payments',       label: 'Payments',         icon: CreditCard },
+  { to: '/cancellations',  label: 'Cancellations',    icon: XCircle },
   { to: '/settings',   label: 'Settings',          icon: Settings },
 ]
 

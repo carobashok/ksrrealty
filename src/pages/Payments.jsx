@@ -8,11 +8,18 @@ import { Search } from 'lucide-react';
 const MODE_LABELS = { cash: 'Cash', cheque: 'Cheque', neft: 'NEFT', rtgs: 'RTGS', upi: 'UPI', dd: 'DD', imps: 'IMPS' };
 const modeLabel = (value) => MODE_LABELS[value] || value;
 
+const inr = (n) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(n || 0);
+
 export default function Payments() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [projectFilter, setProjectFilter] = useState('All');
-  const [typeFilter, setTypeFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState('All'); // 'All' | 'landowner' | 'refund'
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -29,81 +36,143 @@ export default function Payments() {
     },
   });
 
-  const { data: payments = [], isLoading } = useQuery({
-    queryKey: ['all-payments'],
+  // Landowner share payments — flat fetch, join manually
+  const { data: landownerPayments = [], isLoading: loadingLandowner } = useQuery({
+    queryKey: ['outgoing-landowner-payments'],
     queryFn: async () => {
       const { data, error } = await supabase
         .schema('ksr')
         .from('payments')
-        .select(
-          `
-          id,
-          payment_type,
-          payment_date,
-          amount,
-          mode,
-          reference_no,
-          notes,
-          booking_id,
-          landowner_id,
-          bookings (
-            id,
-            customers ( name, mobile ),
-            projects ( id, name ),
-            plots ( plot_number, block )
-          ),
-          project_landowners ( landowner_name )
-        `
-        )
+        .select('id, payment_date, amount, mode, reference_no, notes, booking_id, landowner_id')
+        .eq('payment_type', 'landowner_share')
         .order('payment_date', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
-  const inr = (n) =>
-    new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(n || 0);
+  // Fetch bookings for landowner payments
+  const lpBookingIds = landownerPayments.map(p => p.booking_id).filter(Boolean);
+  const { data: lpBookings = [] } = useQuery({
+    queryKey: ['outgoing-lp-bookings', lpBookingIds.join(',')],
+    enabled: lpBookingIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('id, project_id, plot_id, customer_id, projects(id, name), plots(plot_number, block), customers(name, mobile)')
+        .in('id', lpBookingIds);
+      if (error) throw error;
+      return data;
+    },
+  });
 
-  const filtered = payments.filter((p) => {
-    const matchesProject = projectFilter === 'All' || p.bookings?.projects?.id === projectFilter;
-    const matchesType = typeFilter === 'All' || p.payment_type === typeFilter;
+  const lpBookingMap = Object.fromEntries(lpBookings.map(b => [b.id, b]));
+
+  const landownerRows = landownerPayments.map(p => {
+    const b = lpBookingMap[p.booking_id] || {};
+    return {
+      ...p,
+      _type: 'landowner',
+      _label: 'Landowner',
+      _projectId: b.projects?.id,
+      _projectName: b.projects?.name,
+      _plotNumber: b.plots?.plot_number,
+      _plotBlock: b.plots?.block,
+      _customerName: b.customers?.name,
+      _customerMobile: b.customers?.mobile,
+      _navigateTo: `/bookings/${p.booking_id}`,
+    };
+  });
+
+  // Customer refunds — flat fetch
+  const { data: refundPayments = [], isLoading: loadingRefunds } = useQuery({
+    queryKey: ['outgoing-refund-payments'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('cancellation_refunds')
+        .select('id, refund_date, amount, refund_type, reference_no, notes, booking_id')
+        .order('refund_date', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch bookings for refunds
+  const refundBookingIds = refundPayments.map(r => r.booking_id).filter(Boolean);
+  const { data: refundBookings = [] } = useQuery({
+    queryKey: ['outgoing-refund-bookings', refundBookingIds.join(',')],
+    enabled: refundBookingIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('id, projects(id, name), plots(plot_number, block), customers(name, mobile)')
+        .in('id', refundBookingIds);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const refundBookingMap = Object.fromEntries(refundBookings.map(b => [b.id, b]));
+
+  const refundRows = refundPayments.map(r => {
+    const b = refundBookingMap[r.booking_id] || {};
+    return {
+      ...r,
+      _type: 'refund',
+      payment_date: r.refund_date,
+      mode: null,
+      _label: r.refund_type === 'cash_refund' ? 'Customer Refund' : 'Adjusted to Booking',
+      _projectId: b.projects?.id,
+      _projectName: b.projects?.name,
+      _plotNumber: b.plots?.plot_number,
+      _plotBlock: b.plots?.block,
+      _customerName: b.customers?.name,
+      _customerMobile: b.customers?.mobile,
+      _navigateTo: `/cancellations`,
+    };
+  });
+
+  const isLoading = loadingLandowner || loadingRefunds;
+
+  // Merge and sort by date desc
+  const allPayments = [...landownerRows, ...refundRows]
+    .sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
+
+  const filtered = allPayments.filter((p) => {
+    if (typeFilter === 'landowner' && p._type !== 'landowner') return false;
+    if (typeFilter === 'refund' && p._type !== 'refund') return false;
+    const matchesProject = projectFilter === 'All' || p._projectId === projectFilter;
     const matchesFrom = !dateFrom || p.payment_date >= dateFrom;
     const matchesTo = !dateTo || p.payment_date <= dateTo;
     const q = search.toLowerCase();
     const matchesSearch =
       !q ||
-      p.bookings?.customers?.name?.toLowerCase().includes(q) ||
-      p.bookings?.customers?.mobile?.toLowerCase().includes(q) ||
-      p.bookings?.plots?.plot_number?.toLowerCase().includes(q) ||
+      p._customerName?.toLowerCase().includes(q) ||
+      p._customerMobile?.toLowerCase().includes(q) ||
+      p._plotNumber?.toLowerCase().includes(q) ||
       p.reference_no?.toLowerCase().includes(q);
-    return matchesProject && matchesType && matchesFrom && matchesTo && matchesSearch;
+    return matchesProject && matchesFrom && matchesTo && matchesSearch;
   });
 
-  const totalCollected = filtered.reduce((sum, p) => sum + Number(p.amount), 0);
-  const companyTotal = filtered
-    .filter((p) => p.payment_type === 'company_share')
-    .reduce((sum, p) => sum + Number(p.amount), 0);
-  const landownerTotal = filtered
-    .filter((p) => p.payment_type === 'landowner_share')
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const totalOutgoing = filtered.reduce((sum, p) => sum + Number(p.amount), 0);
+  const landownerTotal = filtered.filter(p => p._type === 'landowner').reduce((sum, p) => sum + Number(p.amount), 0);
+  const refundTotal = filtered.filter(p => p._type === 'refund').reduce((sum, p) => sum + Number(p.amount), 0);
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-slate-800">Payments</h1>
-        <p className="text-sm text-slate-500">All payments recorded across every booking</p>
+        <p className="text-sm text-slate-500">Outgoing payments — landowner settlements and customer refunds</p>
       </div>
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <SummaryCard label="Total Collected" value={inr(totalCollected)} />
-        <SummaryCard label="Company (KSR) Share" value={inr(companyTotal)} />
-        <SummaryCard label="Landowner Share" value={inr(landownerTotal)} />
+        <SummaryCard label="Total Outgoing" value={inr(totalOutgoing)} />
+        <SummaryCard label="Landowner Settlements" value={inr(landownerTotal)} />
+        <SummaryCard label="Customer Refunds" value={inr(refundTotal)} />
       </div>
 
       {/* Filters */}
@@ -125,9 +194,7 @@ export default function Payments() {
         >
           <option value="All">All Projects</option>
           {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
+            <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
         <select
@@ -136,8 +203,8 @@ export default function Payments() {
           className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
         >
           <option value="All">All Types</option>
-          <option value="company_share">Company (KSR) Share</option>
-          <option value="landowner_share">Landowner Share</option>
+          <option value="landowner">Landowner Settlements</option>
+          <option value="refund">Customer Refunds</option>
         </select>
         <input
           type="date"
@@ -168,6 +235,7 @@ export default function Payments() {
                 <th className="text-left px-4 py-3">Customer</th>
                 <th className="text-left px-4 py-3">Project / Plot</th>
                 <th className="text-left px-4 py-3">Paid To</th>
+                <th className="text-left px-4 py-3">Type</th>
                 <th className="text-left px-4 py-3">Mode</th>
                 <th className="text-left px-4 py-3">Reference</th>
                 <th className="text-right px-4 py-3">Amount</th>
@@ -176,43 +244,40 @@ export default function Payments() {
             <tbody>
               {filtered.map((p) => (
                 <tr
-                  key={p.id}
-                  onClick={() => navigate(`/bookings/${p.booking_id}`)}
+                  key={`${p._type}-${p.id}`}
+                  onClick={() => navigate(p._navigateTo)}
                   className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
                 >
                   <td className="px-4 py-3 text-slate-600">
                     {new Date(p.payment_date).toLocaleDateString('en-IN', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
+                      day: '2-digit', month: 'short', year: 'numeric',
                     })}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-800">
-                      {p.bookings?.customers?.name || '—'}
-                    </div>
-                    <div className="text-slate-500 text-xs">{p.bookings?.customers?.mobile || ''}</div>
+                    <div className="font-medium text-slate-800">{p._customerName || '—'}</div>
+                    <div className="text-slate-500 text-xs">{p._customerMobile || ''}</div>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {p.bookings?.projects?.name || '—'}
-                    {p.bookings?.plots?.plot_number ? (
+                    {p._projectName || '—'}
+                    {p._plotNumber && (
                       <span className="text-slate-400">
-                        {' '}
-                        · Plot {p.bookings.plots.plot_number}
-                        {p.bookings.plots.block ? ` (${p.bookings.plots.block})` : ''}
+                        {' '}· Plot {p._plotNumber}{p._plotBlock ? ` (${p._plotBlock})` : ''}
                       </span>
-                    ) : null}
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {p.payment_type === 'landowner_share'
-                      ? `Landowner${p.project_landowners ? ` — ${p.project_landowners.landowner_name}` : ''}`
-                      : 'Company (KSR)'}
+                  <td className="px-4 py-3 text-slate-600">{p._label}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs border ${
+                      p._type === 'landowner'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                    }`}>
+                      {p._type === 'landowner' ? 'Landowner' : 'Refund'}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{modeLabel(p.mode) || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{p.reference_no || '—'}</td>
-                  <td className="px-4 py-3 text-right font-medium text-slate-800">
-                    {inr(p.amount)}
-                  </td>
+                  <td className="px-4 py-3 text-right font-medium text-slate-800">{inr(p.amount)}</td>
                 </tr>
               ))}
             </tbody>

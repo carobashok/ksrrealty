@@ -29,6 +29,7 @@ export default function Bookings() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [showCancelled, setShowCancelled] = useState(false);
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['bookings'],
@@ -79,6 +80,7 @@ export default function Bookings() {
     }).format(n || 0);
 
   const filtered = bookings.filter((b) => {
+    if (b.status === 'cancelled' && !showCancelled) return false;
     const matchesStatus = statusFilter === 'All' || b.status === statusFilter;
     const q = search.toLowerCase();
     const matchesSearch =
@@ -130,6 +132,15 @@ export default function Bookings() {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showCancelled}
+            onChange={(e) => setShowCancelled(e.target.checked)}
+            className="rounded border-slate-300"
+          />
+          Show Cancelled
+        </label>
       </div>
 
       {/* Table */}
@@ -159,7 +170,7 @@ export default function Bookings() {
                 <tr
                   key={b.id}
                   onClick={() => navigate(`/bookings/${b.id}`)}
-                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                  className={`border-t border-slate-100 hover:bg-slate-50 cursor-pointer ${b.status === 'cancelled' ? 'opacity-60 bg-red-50/30' : ''}`}
                 >
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-800">{b.customers?.name || '—'}</div>

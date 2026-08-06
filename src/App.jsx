@@ -14,11 +14,13 @@ import Bookings from './pages/Bookings'
 import BookingDetail from './pages/BookingDetail'
 import NewBooking from './pages/NewBooking'
 import Payments from './pages/Payments'
+import Receipts from './pages/Receipts'
 import Employees from './pages/Employees'
 import ChannelPartners from './pages/ChannelPartners'
 import QuotationView from './pages/QuotationView'
 import ReceiptView from './pages/ReceiptView'
 import Settings from './pages/Settings'
+import Cancellations from './pages/Cancellations'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,10 +72,12 @@ export default function App() {
               <Route path="bookings/:bookingId"        element={<BookingDetail />} />
               <Route path="bookings/:bookingId/quotation" element={<QuotationView />} />
               <Route path="bookings/:bookingId/payments/:paymentId/receipt" element={<ReceiptView />} />
+              <Route path="receipts"                   element={<Receipts />} />
               <Route path="payments"                   element={<Payments />} />
               <Route path="employees"                  element={<Employees />} />
               <Route path="channel-partners"           element={<ChannelPartners />} />
               <Route path="settings"                   element={<Settings />} />
+              <Route path="cancellations"               element={<Cancellations />} />
             </Route>
           </Routes>
         </AuthProvider>
