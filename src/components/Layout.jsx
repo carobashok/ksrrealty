@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '../lib/supabase'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Users, FileText,
@@ -26,6 +28,21 @@ const nav = [
 
 export default function Layout() {
   const { signOut } = useAuth()
+
+  const { data: settings } = useQuery({
+    queryKey: ['company-settings-layout'],
+    staleTime: 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('company_settings')
+        .select('logo_url, account_holder_name')
+        .eq('id', '00000000-0000-0000-0000-000000000001')
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  })
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -43,8 +60,18 @@ export default function Layout() {
       <aside className="w-56 flex-shrink-0 bg-navy text-white flex flex-col print:hidden">
         {/* Logo */}
         <div className="px-5 py-4 border-b border-white/10">
-          <p className="text-xs font-bold tracking-widest text-gold uppercase">Carob Technologies</p>
-          <p className="text-base font-bold text-white mt-0.5">KSR MIS</p>
+          {settings?.logo_url ? (
+            <img
+              src={settings.logo_url}
+              alt={settings.account_holder_name || 'KSR Realty'}
+              className="h-10 w-auto object-contain"
+            />
+          ) : (
+            <>
+              <p className="text-xs font-bold tracking-widest text-gold uppercase">Carob Technologies</p>
+              <p className="text-base font-bold text-white mt-0.5">KSR MIS</p>
+            </>
+          )}
         </div>
 
         {/* Nav */}
