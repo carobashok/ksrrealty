@@ -59,12 +59,12 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-56 flex-shrink-0 bg-navy text-white flex flex-col print:hidden">
         {/* Logo */}
-        <div className="px-5 py-4 border-b border-white/10">
+        <div className="px-4 py-5 border-b border-white/10 flex flex-col items-center">
           {settings?.logo_url ? (
             <img
               src={settings.logo_url}
               alt={settings.account_holder_name || 'KSR Realty'}
-              className="h-10 w-auto object-contain"
+              className="h-20 w-auto object-contain"
             />
           ) : (
             <>
