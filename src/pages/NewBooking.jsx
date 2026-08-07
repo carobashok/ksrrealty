@@ -53,8 +53,6 @@ export default function NewBooking() {
   const [channelPartnerId, setChannelPartnerId] = useState('');
   const [assignedExecutiveId, setAssignedExecutiveId] = useState('');
 
-  const [incentiveRows, setIncentiveRows] = useState([{ employee_id: '', amount: '' }]);
-  const [incentivePoolOverride, setIncentivePoolOverride] = useState(''); // '' = use project default
 
   const [tokenAdvance, setTokenAdvance] = useState('');
   const [tokenDate, setTokenDate] = useState(new Date().toISOString().slice(0, 10));
@@ -282,23 +280,6 @@ export default function NewBooking() {
     };
   }, [selectedPlot, selectedProject, effectiveRate, effectiveRateCent, isCentsProject, discountAmount, regChargePctOverride, regDocPaymentMode]);
 
-  // ---- Incentive split ----
-  const incentivePool = incentivePoolOverride !== '' ? Number(incentivePoolOverride) : (Number(selectedProject?.incentive_amount_per_plot) || 0);
-  const incentiveAllocated = incentiveRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-  const incentiveRemaining = incentivePool - incentiveAllocated;
-  const incentiveOverAllocated = incentiveRemaining < 0;
-
-  const addIncentiveRow = () =>
-    setIncentiveRows([...incentiveRows, { employee_id: '', amount: '' }]);
-
-  const removeIncentiveRow = (index) =>
-    setIncentiveRows(incentiveRows.filter((_, i) => i !== index));
-
-  const updateIncentiveRow = (index, field, value) =>
-    setIncentiveRows(
-      incentiveRows.map((row, i) => (i === index ? { ...row, [field]: value } : row))
-    );
-
   // ---- Mutations ----
   const createCustomerMutation = useMutation({
     mutationFn: async (payload) => {
@@ -323,16 +304,6 @@ export default function NewBooking() {
         throw new Error('Select the assigned executive');
       if (!registrantSame && registrants.some((r) => !r.name.trim()))
         throw new Error('Enter a name for every registrant, or toggle "Same as customer"');
-
-      const validIncentiveRows = incentiveRows.filter(
-        (r) => r.employee_id && Number(r.amount) > 0
-      );
-      const incentiveTotal = validIncentiveRows.reduce((sum, r) => sum + Number(r.amount), 0);
-      if (incentiveTotal > incentivePool) {
-        throw new Error(
-          `Incentive allocated (₹${incentiveTotal.toLocaleString('en-IN')}) exceeds the pool (₹${incentivePool.toLocaleString('en-IN')}) for this plot`
-        );
-      }
 
       let finalCustomerId = customerId;
 
@@ -411,36 +382,6 @@ export default function NewBooking() {
         }
       }
 
-      // Insert incentive split (booking_commissions)
-      if (validIncentiveRows.length > 0 && incentivePool > 0) {
-        const sortedRoles = [
-          ...new Set(
-            validIncentiveRows
-              .map((r) => employees.find((e) => e.id === r.employee_id)?.role)
-              .filter(Boolean)
-          ),
-        ].sort();
-        const combination = sortedRoles.join('+');
-
-        const commissionPayload = validIncentiveRows.map((r) => {
-          const emp = employees.find((e) => e.id === r.employee_id);
-          return {
-            booking_id: booking.id,
-            employee_id: r.employee_id,
-            role: emp?.role || null,
-            share_pct: (Number(r.amount) / incentivePool) * 100,
-            combination,
-            override: true,
-          };
-        });
-
-        const { error: commissionErr } = await supabase
-          .schema('ksr')
-          .from('booking_commissions')
-          .insert(commissionPayload);
-        if (commissionErr) throw commissionErr;
-      }
-
       // Advance payment at booking time is always paid to KSR (company_share).
       // Landowner payments and any further KSR installments happen later,
       // as separate individual entries added from the Booking Detail payment ledger.
@@ -503,7 +444,6 @@ export default function NewBooking() {
               onChange={(e) => {
                 setProjectId(e.target.value);
                 setPlotId('');
-                setIncentivePoolOverride('');
               }}
               className="input"
             >
@@ -932,84 +872,6 @@ export default function NewBooking() {
         </div>
       </Section>
 
-      {/* Incentive Split */}
-      {selectedProject && (
-        <Section title="Incentive Split">
-          <div className="mb-4">
-            <label className="text-xs font-medium text-slate-500">Incentive Pool for this Plot (₹)</label>
-            <div className="flex items-center gap-3 mt-1">
-              <input
-                type="number"
-                value={incentivePoolOverride !== '' ? incentivePoolOverride : (selectedProject?.incentive_amount_per_plot ?? '')}
-                onChange={(e) => setIncentivePoolOverride(e.target.value)}
-                placeholder="Enter incentive pool amount"
-                className="input w-48"
-              />
-              {incentivePoolOverride !== '' && Number(incentivePoolOverride) !== Number(selectedProject?.incentive_amount_per_plot) && (
-                <span className="text-xs text-amber-600">
-                  Overridden (project default: {inr(selectedProject?.incentive_amount_per_plot)})
-                </span>
-              )}
-              {incentivePool === 0 && incentivePoolOverride === '' && (
-                <span className="text-xs text-amber-600">No incentive rate set for this project yet</span>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {incentiveRows.map((row, index) => (
-              <div key={index} className="flex gap-3 items-start">
-                <select
-                  value={row.employee_id}
-                  onChange={(e) => updateIncentiveRow(index, 'employee_id', e.target.value)}
-                  className="input flex-1"
-                >
-                  <option value="">Select employee...</option>
-                  {projectEmployees.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  value={row.amount}
-                  onChange={(e) => updateIncentiveRow(index, 'amount', e.target.value)}
-                  placeholder="Amount ₹"
-                  className="input w-40"
-                />
-                {incentiveRows.length > 1 && (
-                  <button
-                    onClick={() => removeIncentiveRow(index)}
-                    className="p-2 text-slate-400 hover:text-red-600"
-                  >
-                    <X size={18} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <button
-            onClick={addIncentiveRow}
-            className="mt-2 flex items-center gap-1 text-sm text-[#0a1f44] hover:underline"
-          >
-            <Plus size={14} /> Add another person
-          </button>
-
-          <div
-            className={`mt-3 text-sm flex justify-between p-3 rounded-lg ${
-              incentiveOverAllocated ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'
-            }`}
-          >
-            <span>Allocated: {inr(incentiveAllocated)}</span>
-            <span>
-              {incentiveOverAllocated ? 'Over by' : 'Remaining'}: {inr(Math.abs(incentiveRemaining))}
-            </span>
-          </div>
-        </Section>
-      )}
-
       {/* Advance Payment */}
       <Section title="Advance Payment">
         <div className="grid grid-cols-2 gap-4">
@@ -1063,7 +925,7 @@ export default function NewBooking() {
         </button>
         <button
           onClick={() => submitBookingMutation.mutate()}
-          disabled={submitBookingMutation.isPending || !calc || incentiveOverAllocated}
+          disabled={submitBookingMutation.isPending || !calc}
           className="px-6 py-2 bg-[#0a1f44] text-white rounded-lg hover:bg-[#122a5c] disabled:opacity-50"
         >
           {submitBookingMutation.isPending ? 'Creating Booking...' : 'Create Booking'}

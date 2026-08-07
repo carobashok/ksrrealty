@@ -38,6 +38,11 @@ export default function BookingDetail() {
   const queryClient = useQueryClient();
 
   const [showAddPayment, setShowAddPayment] = useState(false);
+
+  // Incentive split state
+  const [incentiveRows, setIncentiveRows] = useState([{ employee_id: '', amount: '' }]);
+  const [incentivePool, setIncentivePool] = useState('');
+  const [showIncentiveForm, setShowIncentiveForm] = useState(false);
   const [paymentType, setPaymentType] = useState('company_share'); // 'company_share' | 'landowner_share'
   const [landownerId, setLandownerId] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
@@ -86,7 +91,7 @@ export default function BookingDetail() {
           `
           *,
           customers ( id, name, mobile, email ),
-          projects ( id, name, is_jv ),
+          projects ( id, name, is_jv, incentive_amount_per_plot ),
           plots ( id, plot_number, block, area_sqft ),
           assigned_executive:employees!assigned_executive_id ( id, name, role ),
           channel_partners ( id, name, partner_code )
@@ -126,6 +131,86 @@ export default function BookingDetail() {
       if (error) throw error;
       return data;
     },
+  });
+
+  // Fetch existing incentive split
+  const { data: commissions = [], refetch: refetchCommissions } = useQuery({
+    queryKey: ['booking-commissions', bookingId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('booking_commissions')
+        .select('id, employee_id, share_pct, combination, employees(name, role)')
+        .eq('booking_id', bookingId);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!bookingId,
+  });
+
+  // Fetch project employees for incentive split
+  const { data: projectEmployees = [] } = useQuery({
+    queryKey: ['booking-detail-project-employees', booking?.project_id],
+    enabled: !!booking?.project_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('project_employees')
+        .select('employee_id, employees(id, name, role)')
+        .eq('project_id', booking.project_id);
+      if (error) throw error;
+      return data.map(pe => pe.employees).filter(Boolean);
+    },
+  });
+
+  const saveIncentiveMutation = useMutation({
+    mutationFn: async () => {
+      const validRows = incentiveRows.filter(r => r.employee_id && Number(r.amount) > 0);
+      if (validRows.length === 0) throw new Error('Add at least one employee with an amount');
+      const pool = Number(incentivePool) || 0;
+      if (pool <= 0) throw new Error('Enter the incentive pool amount');
+      const total = validRows.reduce((s, r) => s + Number(r.amount), 0);
+      if (total > pool) throw new Error(`Allocated (₹${total.toLocaleString('en-IN')}) exceeds pool (₹${pool.toLocaleString('en-IN')})`);
+
+      // Delete existing commissions for this booking
+      await supabase.schema('ksr').from('booking_commissions').delete().eq('booking_id', bookingId);
+
+      const sortedRoles = [...new Set(validRows.map(r => projectEmployees.find(e => e.id === r.employee_id)?.role).filter(Boolean))].sort();
+      const combination = sortedRoles.join('+');
+
+      const payload = validRows.map(r => {
+        const emp = projectEmployees.find(e => e.id === r.employee_id);
+        return {
+          booking_id: bookingId,
+          employee_id: r.employee_id,
+          role: emp?.role || null,
+          share_pct: (Number(r.amount) / pool) * 100,
+          combination,
+          override: true,
+        };
+      });
+
+      const { error } = await supabase.schema('ksr').from('booking_commissions').insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Incentive split saved');
+      refetchCommissions();
+      setShowIncentiveForm(false);
+    },
+    onError: (err) => toast.error(err.message || 'Failed to save incentive split'),
+  });
+
+  const deleteCommissionMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.schema('ksr').from('booking_commissions').delete().eq('booking_id', bookingId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success('Incentive split cleared');
+      refetchCommissions();
+    },
+    onError: (err) => toast.error(err.message || 'Failed to clear incentive split'),
   });
 
   const addPaymentMutation = useMutation({
@@ -626,6 +711,152 @@ export default function BookingDetail() {
           )}
         </div>
       )}
+
+      {/* Incentive Split */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Incentive Split</h3>
+          <div className="flex gap-2">
+            {commissions.length > 0 && !showIncentiveForm && (
+              <button
+                onClick={() => {
+                  // Pre-fill form with existing data
+                  const pool = commissions.reduce((s, c) => s + (c.share_pct / 100) * (Number(booking.projects?.incentive_amount_per_plot) || 0), 0);
+                  setIncentivePool(String(Math.round(pool)));
+                  setIncentiveRows(commissions.map(c => ({ employee_id: c.employee_id, amount: '' })));
+                  setShowIncentiveForm(true);
+                }}
+                className="flex items-center gap-1 text-sm border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50"
+              >
+                <Pencil size={13} /> Edit
+              </button>
+            )}
+            {commissions.length > 0 && (
+              <button
+                onClick={() => { if (window.confirm('Clear all incentive split for this booking?')) deleteCommissionMutation.mutate(); }}
+                className="flex items-center gap-1 text-sm border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50"
+              >
+                <Trash2 size={13} /> Clear
+              </button>
+            )}
+            {!showIncentiveForm && (
+              <button
+                onClick={() => { setIncentiveRows([{ employee_id: '', amount: '' }]); setIncentivePool(String(booking?.projects?.incentive_amount_per_plot || '')); setShowIncentiveForm(true); }}
+                className="flex items-center gap-1 text-sm bg-[#0a1f44] text-white px-3 py-1.5 rounded-lg hover:bg-[#122a5c]"
+              >
+                <Plus size={14} /> {commissions.length > 0 ? 'Re-enter' : 'Add Split'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Existing commissions display */}
+        {commissions.length > 0 && !showIncentiveForm && (
+          <table className="w-full text-sm">
+            <thead className="text-xs text-slate-500 uppercase">
+              <tr>
+                <th className="text-left py-1">Employee</th>
+                <th className="text-left py-1">Role</th>
+                <th className="text-right py-1">Share %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {commissions.map(c => (
+                <tr key={c.id} className="border-t border-slate-100">
+                  <td className="py-2 text-slate-800 font-medium">{c.employees?.name || '—'}</td>
+                  <td className="py-2 text-slate-500 capitalize">{c.employees?.role || '—'}</td>
+                  <td className="py-2 text-right text-slate-700">{Number(c.share_pct).toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {commissions.length === 0 && !showIncentiveForm && (
+          <p className="text-sm text-slate-400">No incentive split recorded yet</p>
+        )}
+
+        {/* Add/Edit form */}
+        {showIncentiveForm && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-slate-500">Incentive Pool for this Plot (₹)</label>
+              <input
+                type="number"
+                value={incentivePool}
+                onChange={e => setIncentivePool(e.target.value)}
+                placeholder="Enter pool amount"
+                className="w-48 mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+              />
+            </div>
+            <div className="space-y-2">
+              {incentiveRows.map((row, index) => (
+                <div key={index} className="flex gap-3 items-center">
+                  <select
+                    value={row.employee_id}
+                    onChange={e => setIncentiveRows(prev => prev.map((r, i) => i === index ? { ...r, employee_id: e.target.value } : r))}
+                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+                  >
+                    <option value="">Select employee...</option>
+                    {projectEmployees.map(e => (
+                      <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    value={row.amount}
+                    onChange={e => setIncentiveRows(prev => prev.map((r, i) => i === index ? { ...r, amount: e.target.value } : r))}
+                    placeholder="Amount ₹"
+                    className="w-36 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+                  />
+                  {incentiveRows.length > 1 && (
+                    <button onClick={() => setIncentiveRows(prev => prev.filter((_, i) => i !== index))}
+                      className="text-slate-400 hover:text-red-600">
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setIncentiveRows(prev => [...prev, { employee_id: '', amount: '' }])}
+              className="flex items-center gap-1 text-sm text-[#0a1f44] hover:underline"
+            >
+              <Plus size={13} /> Add another person
+            </button>
+
+            {/* Pool summary */}
+            {(() => {
+              const allocated = incentiveRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+              const pool = Number(incentivePool) || 0;
+              const remaining = pool - allocated;
+              const over = remaining < 0;
+              return (
+                <div className={`text-sm flex justify-between p-3 rounded-lg ${over ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'}`}>
+                  <span>Allocated: {inr(allocated)}</span>
+                  <span>{over ? 'Over by' : 'Remaining'}: {inr(Math.abs(remaining))}</span>
+                </div>
+              );
+            })()}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => saveIncentiveMutation.mutate()}
+                disabled={saveIncentiveMutation.isPending}
+                className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg text-sm hover:bg-[#122a5c] disabled:opacity-50"
+              >
+                {saveIncentiveMutation.isPending ? 'Saving...' : 'Save Incentive Split'}
+              </button>
+              <button
+                onClick={() => setShowIncentiveForm(false)}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Payment history + Add Payment */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
