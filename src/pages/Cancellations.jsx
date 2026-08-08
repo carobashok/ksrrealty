@@ -30,7 +30,7 @@ export default function Cancellations() {
         .select(`
           id, booking_date, cancellation_date, cancellation_reason,
           forfeiture_amount, refund_due, cancellation_notes, status,
-          total_consideration, company_share_amt,
+          total_consideration, company_share_amt, customer_id,
           customers ( name, mobile ),
           projects ( name ),
           plots ( plot_number, block ),
@@ -324,7 +324,8 @@ function RefundModal({ cancellation, refundedSoFar, allBookings, onClose, onSucc
     }
     setSaving(true);
     try {
-      const { error } = await supabase
+      // 1. Record in cancellation_refunds
+      const { error: refundErr } = await supabase
         .schema('ksr')
         .from('cancellation_refunds')
         .insert({
@@ -336,7 +337,25 @@ function RefundModal({ cancellation, refundedSoFar, allBookings, onClose, onSucc
           reference_no: form.reference_no || null,
           notes: form.notes || null,
         });
-      if (error) throw error;
+      if (refundErr) throw refundErr;
+
+      // 2. If adjusted to new booking, also create a company_share payment in that booking
+      if (form.refund_type === 'adjusted_to_booking' && form.adjusted_to_booking_id) {
+        const { error: paymentErr } = await supabase
+          .schema('ksr')
+          .from('payments')
+          .insert({
+            booking_id: form.adjusted_to_booking_id,
+            payment_type: 'company_share',
+            payment_date: form.refund_date,
+            amount: Number(form.amount),
+            mode: 'neft',
+            reference_no: form.reference_no || null,
+            notes: `Adjusted from cancelled booking — ${cancellation.projects?.name || ''} Plot ${cancellation.plots?.plot_number || ''}${form.notes ? ` | ${form.notes}` : ''}`,
+          });
+        if (paymentErr) throw paymentErr;
+      }
+
       onSuccess();
     } catch (err) {
       toast.error(err.message || 'Failed to record refund');
