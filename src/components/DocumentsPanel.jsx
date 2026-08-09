@@ -52,9 +52,9 @@ export default function DocumentsPanel({ projectId }) {
       const { data, error } = await supabase
         .schema('ksr')
         .from('project_documents')
-        .select('id, project_id, file_name, drive_file_id, drive_view_link, created_at')
+        .select('id, project_id, file_name, drive_file_id, drive_view_link, uploaded_at')
         .eq('project_id', projectId)
-        .order('created_at', { ascending: false });
+        .order('uploaded_at', { ascending: false });
       if (error) throw error;
       return data;
     },
@@ -94,6 +94,7 @@ export default function DocumentsPanel({ projectId }) {
           file_name,
           drive_file_id: file_id,
           drive_view_link: web_view_link,
+          uploaded_at: new Date().toISOString(),
         });
       if (error) throw error;
 
