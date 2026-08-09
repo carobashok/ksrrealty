@@ -19,6 +19,7 @@ export default function Payments() {
   const [search, setSearch] = useState('');
   const [projectFilter, setProjectFilter] = useState('All');
   const [showSettleModal, setShowSettleModal] = useState(false);
+  const [expandedRow, setExpandedRow] = useState(null);
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects-list-simple'],
@@ -36,6 +37,7 @@ export default function Payments() {
   // All JV bookings (ksr_owes_landowner > 0)
   const { data: bookings = [], isLoading: loadingBookings } = useQuery({
     queryKey: ['outgoing-jv-bookings'],
+    staleTime: 1000 * 60,
     queryFn: async () => {
       const { data, error } = await supabase
         .schema('ksr')
@@ -53,6 +55,7 @@ export default function Payments() {
   // Fetch related data
   const { data: bookingDetails = [] } = useQuery({
     queryKey: ['outgoing-booking-details', bookingIds.join(',')],
+    staleTime: 1000 * 60,
     enabled: bookingIds.length > 0,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -68,12 +71,13 @@ export default function Payments() {
   // Landowner payments already made
   const { data: landownerPayments = [], isLoading: loadingPayments } = useQuery({
     queryKey: ['outgoing-landowner-paid', bookingIds.join(',')],
+    staleTime: 1000 * 60,
     enabled: bookingIds.length > 0,
     queryFn: async () => {
       const { data, error } = await supabase
         .schema('ksr')
         .from('payments')
-        .select('booking_id, amount')
+        .select('id, booking_id, amount, payment_date, mode, reference_no, notes')
         .eq('payment_type', 'landowner_share')
         .in('booking_id', bookingIds);
       if (error) throw error;
@@ -84,6 +88,7 @@ export default function Payments() {
   // Refunds
   const { data: refunds = [], isLoading: loadingRefunds } = useQuery({
     queryKey: ['outgoing-refunds'],
+    staleTime: 1000 * 60,
     queryFn: async () => {
       const { data, error } = await supabase
         .schema('ksr')
@@ -98,6 +103,7 @@ export default function Payments() {
   const refundBookingIds = [...new Set(refunds.map(r => r.booking_id))];
   const { data: refundBookingDetails = [] } = useQuery({
     queryKey: ['outgoing-refund-booking-details', refundBookingIds.join(',')],
+    staleTime: 1000 * 60,
     enabled: refundBookingIds.length > 0,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -111,6 +117,13 @@ export default function Payments() {
   });
 
   const isLoading = loadingBookings || loadingPayments || loadingRefunds;
+
+  // Build settlement history per booking
+  const settlementsByBooking = landownerPayments.reduce((acc, p) => {
+    if (!acc[p.booking_id]) acc[p.booking_id] = [];
+    acc[p.booking_id].push(p);
+    return acc;
+  }, {});
 
   // Build lookup maps
   const detailMap = Object.fromEntries(bookingDetails.map(b => [b.id, b]));
@@ -271,30 +284,75 @@ export default function Payments() {
               </tr>
             </thead>
             <tbody>
-              {filteredLandowner.map((r) => (
-                <tr
-                  key={r.id}
-                  onClick={() => navigate(r.navigateTo)}
-                  className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
-                >
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-slate-800">{r.customerName}</div>
-                    <div className="text-xs text-slate-500">{r.customerMobile}</div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {r.projectName}
-                    {r.plotNumber && (
-                      <span className="text-slate-400"> · Plot {r.plotNumber}{r.plotBlock ? ` (${r.plotBlock})` : ''}</span>
+              {filteredLandowner.map((r) => {
+                const isExpanded = expandedRow === r.id;
+                const settlements = settlementsByBooking[r.id] || [];
+                return (
+                  <>
+                    <tr
+                      key={r.id}
+                      onClick={() => setExpandedRow(isExpanded ? null : r.id)}
+                      className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                          <div>
+                            <div className="font-medium text-slate-800">{r.customerName}</div>
+                            <div className="text-xs text-slate-500">{r.customerMobile}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {r.projectName}
+                        {r.plotNumber && (
+                          <span className="text-slate-400"> · Plot {r.plotNumber}{r.plotBlock ? ` (${r.plotBlock})` : ''}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">{statusBadge(r.status)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-800">{inr(r.owesTotal)}</td>
+                      <td className="px-4 py-3 text-right text-green-700">{inr(r.paid)}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${r.outstanding > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
+                        {inr(r.outstanding)}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${r.id}-detail`} className="bg-slate-50">
+                        <td colSpan={6} className="px-6 py-3">
+                          {settlements.length === 0 ? (
+                            <p className="text-sm text-slate-400 italic">No settlements recorded yet</p>
+                          ) : (
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-xs text-slate-500 uppercase">
+                                  <th className="text-left py-1 pr-4">Date</th>
+                                  <th className="text-left py-1 pr-4">Mode</th>
+                                  <th className="text-left py-1 pr-4">Reference</th>
+                                  <th className="text-left py-1 pr-4">Notes</th>
+                                  <th className="text-right py-1">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {settlements.map(s => (
+                                  <tr key={s.id} className="border-t border-slate-200">
+                                    <td className="py-1.5 pr-4 text-slate-600">
+                                      {new Date(s.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    </td>
+                                    <td className="py-1.5 pr-4 text-slate-600 uppercase text-xs">{s.mode || '—'}</td>
+                                    <td className="py-1.5 pr-4 text-slate-600">{s.reference_no || '—'}</td>
+                                    <td className="py-1.5 pr-4 text-slate-500 text-xs">{s.notes || '—'}</td>
+                                    <td className="py-1.5 text-right font-medium text-green-700">{inr(s.amount)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-center">{statusBadge(r.status)}</td>
-                  <td className="px-4 py-3 text-right font-medium text-slate-800">{inr(r.owesTotal)}</td>
-                  <td className="px-4 py-3 text-right text-green-700">{inr(r.paid)}</td>
-                  <td className={`px-4 py-3 text-right font-semibold ${r.outstanding > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
-                    {inr(r.outstanding)}
-                  </td>
-                </tr>
-              ))}
+                  </>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">

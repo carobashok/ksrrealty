@@ -33,7 +33,7 @@ export default function Layout() {
 
   const { data: settings } = useQuery({
     queryKey: ['company-settings-layout'],
-    staleTime: 0,
+    staleTime: 1000 * 60 * 10,
     queryFn: async () => {
       const { data, error } = await supabase
         .schema('ksr')
