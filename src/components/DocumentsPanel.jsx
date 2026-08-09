@@ -93,9 +93,7 @@ export default function DocumentsPanel({ projectId }) {
           project_id: projectId,
           file_name,
           drive_file_id: file_id,
-          drive_link: web_view_link,
-          file_type: file.type || 'application/octet-stream',
-          file_size: file.size,
+          drive_view_link: web_view_link,
         });
       if (error) throw error;
 
@@ -183,7 +181,7 @@ export default function DocumentsPanel({ projectId }) {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <a
-                  href={doc.drive_link}
+                  href={doc.drive_view_link}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 text-slate-400 hover:text-[#0a1f44] rounded"
