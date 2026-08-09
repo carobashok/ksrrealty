@@ -79,6 +79,7 @@ export default function Payments() {
         .from('payments')
         .select('id, booking_id, amount, payment_date, mode, reference_no, notes')
         .eq('payment_type', 'landowner_share')
+        .eq('paid_by', 'ksr')
         .in('booking_id', bookingIds);
       if (error) throw error;
       return data;
@@ -226,7 +227,7 @@ export default function Payments() {
       {/* Summary */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <SummaryCard label="Total Owed to Landowners" value={inr(totalOwed)} />
-        <SummaryCard label="Settled" value={inr(totalPaid)} color="text-green-700" />
+        <SummaryCard label="Paid by KSR" value={inr(totalPaid)} color="text-green-700" />
         <SummaryCard label="Outstanding" value={inr(totalOutstanding)} color="text-amber-700" />
         <SummaryCard label="Customer Refunds" value={inr(totalRefunds)} color="text-blue-700" />
       </div>
@@ -279,7 +280,7 @@ export default function Payments() {
                 <th className="text-left px-4 py-3">Project / Plot</th>
                 <th className="text-center px-4 py-3">Booking Status</th>
                 <th className="text-right px-4 py-3">KSR Owes</th>
-                <th className="text-right px-4 py-3">Settled</th>
+                <th className="text-right px-4 py-3">Paid by KSR</th>
                 <th className="text-right px-4 py-3">Outstanding</th>
               </tr>
             </thead>
@@ -461,6 +462,7 @@ function SettleModal({ rows, onClose, onSuccess }) {
       const payments = selectedIds.map(bookingId => ({
         booking_id: bookingId,
         payment_type: 'landowner_share',
+        paid_by: 'ksr',
         payment_date: form.payment_date,
         amount: Number(form.amount),
         mode: form.mode,

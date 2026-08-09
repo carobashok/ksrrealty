@@ -3,7 +3,9 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { Upload } from 'lucide-react';
+import { Upload, FolderOpen, CheckCircle, AlertCircle } from 'lucide-react';
+import { useEffect as useEffectDrive, useCallback } from 'react';
+import { getGoogleAuthUrl, exchangeCodeForTokens } from '../lib/googleDrive';
 
 // Fixed id for the single company_settings row — matches migration_06.
 const SETTINGS_ID = '00000000-0000-0000-0000-000000000001';
@@ -23,6 +25,36 @@ export default function Settings() {
     logo_url: '',
   });
   const [uploading, setUploading] = useState(false);
+  const [connectingDrive, setConnectingDrive] = useState(false);
+
+  // Handle Google OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+
+    // Remove code from URL immediately
+    window.history.replaceState({}, '', '/settings');
+
+    setConnectingDrive(true);
+    exchangeCodeForTokens(code)
+      .then(async ({ access_token, refresh_token, expiry }) => {
+        const { error } = await supabase
+          .schema('ksr')
+          .from('company_settings')
+          .upsert({
+            id: SETTINGS_ID,
+            drive_access_token: access_token,
+            drive_refresh_token: refresh_token,
+            drive_token_expiry: expiry,
+          });
+        if (error) throw error;
+        toast.success('Google Drive connected successfully!');
+        queryClient.invalidateQueries({ queryKey: ['company-settings'] });
+      })
+      .catch((err) => toast.error(err.message || 'Failed to connect Google Drive'))
+      .finally(() => setConnectingDrive(false));
+  }, []);
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ['company-settings'],
@@ -191,6 +223,52 @@ export default function Settings() {
             {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
+
+      {/* Google Drive Integration */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 mt-4">
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">Google Drive Integration</h2>
+        {connectingDrive ? (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <div className="w-4 h-4 border-2 border-slate-300 border-t-[#0a1f44] rounded-full animate-spin" />
+            Connecting to Google Drive...
+          </div>
+        ) : settings?.drive_refresh_token ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-green-700">
+              <CheckCircle size={16} />
+              Google Drive connected
+            </div>
+            {settings?.drive_root_folder_id && (
+              <p className="text-xs text-slate-500">
+                Root folder ID: <span className="font-mono">{settings.drive_root_folder_id}</span>
+              </p>
+            )}
+            <button
+              onClick={() => window.open(getGoogleAuthUrl(), '_self')}
+              className="text-xs text-slate-500 hover:text-slate-700 underline"
+            >
+              Reconnect with a different account
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-amber-700">
+              <AlertCircle size={16} />
+              Google Drive not connected — documents cannot be uploaded
+            </div>
+            <button
+              onClick={() => window.open(getGoogleAuthUrl(), '_self')}
+              className="flex items-center gap-2 px-4 py-2 bg-[#0a1f44] text-white rounded-lg text-sm hover:bg-[#122a5c]"
+            >
+              <FolderOpen size={15} />
+              Connect Google Drive
+            </button>
+            <p className="text-xs text-slate-400">
+              You'll be redirected to Google to grant access. Use the Gmail account that owns the Drive.
+            </p>
+          </div>
+        )}
+      </div>
       </div>
     </div>
   );
