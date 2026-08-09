@@ -1,6 +1,8 @@
 // api/google-upload.js
 // Creates a folder in Drive or uploads a file into an existing folder
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -81,6 +83,9 @@ export default async function handler(req, res) {
 
       const data = await response.json();
       if (data.error) return res.status(400).json({ error: data.error.message });
+
+      // Wait briefly for Drive to process the file before setting permissions
+      await delay(1500);
 
       // Make file publicly readable
       await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
