@@ -52,7 +52,7 @@ export default function DocumentsPanel({ projectId }) {
       const { data, error } = await supabase
         .schema('ksr')
         .from('project_documents')
-        .select('*')
+        .select('id, project_id, file_name, drive_file_id, drive_view_link, created_at')
         .eq('project_id', projectId)
         .order('created_at', { ascending: false });
       if (error) throw error;
