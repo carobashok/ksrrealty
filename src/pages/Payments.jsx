@@ -44,6 +44,7 @@ export default function Payments() {
         .from('bookings')
         .select('id, status, ksr_owes_landowner, project_id, plot_id, customer_id, booking_date')
         .gt('ksr_owes_landowner', 0)
+        .neq('status', 'cancelled')
         .order('booking_date', { ascending: false });
       if (error) throw error;
       return data;

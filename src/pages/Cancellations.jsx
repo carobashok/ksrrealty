@@ -356,6 +356,23 @@ function RefundModal({ cancellation, refundedSoFar, allBookings, onClose, onSucc
         if (paymentErr) throw paymentErr;
       }
 
+      // 3. If held for customer, create a customer_deposit entry
+      if (form.refund_type === 'held_for_customer') {
+        const { error: depositErr } = await supabase
+          .schema('ksr')
+          .from('customer_deposits')
+          .insert({
+            customer_id: cancellation.customer_id,
+            deposit_date: form.refund_date,
+            amount: Number(form.amount),
+            mode: 'neft',
+            reference_no: form.reference_no || null,
+            notes: `From cancelled booking — ${cancellation.projects?.name || ''} Plot ${cancellation.plots?.plot_number || ''}${form.notes ? ` | ${form.notes}` : ''}`,
+            status: 'held',
+          });
+        if (depositErr) throw depositErr;
+      }
+
       onSuccess();
     } catch (err) {
       toast.error(err.message || 'Failed to record refund');
@@ -403,6 +420,7 @@ function RefundModal({ cancellation, refundedSoFar, allBookings, onClose, onSucc
               className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30">
               <option value="cash_refund">Cash Refund</option>
               <option value="adjusted_to_booking">Adjusted to New Booking</option>
+              <option value="held_for_customer">Hold for Customer (No Plot Yet)</option>
             </select>
           </div>
 

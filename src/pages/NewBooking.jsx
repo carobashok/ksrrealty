@@ -199,6 +199,47 @@ export default function NewBooking() {
   const selectedPlot = plots.find((p) => p.id === plotId);
   const selectedCustomer = customerResults.find((c) => c.id === customerId);
 
+  // Fetch held deposits for selected customer
+  const { data: heldDeposits = [] } = useQuery({
+    queryKey: ['customer-held-deposits', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      // Direct deposits
+      const { data: deposits } = await supabase
+        .schema('ksr')
+        .from('customer_deposits')
+        .select('id, amount, deposit_date, notes')
+        .eq('customer_id', customerId)
+        .eq('status', 'held');
+
+      // Held cancellation refunds
+      const { data: bookings } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('id, projects(name), plots(plot_number)')
+        .eq('customer_id', customerId)
+        .eq('status', 'cancelled');
+
+      let heldRefunds = [];
+      if (bookings?.length > 0) {
+        const { data: refunds } = await supabase
+          .schema('ksr')
+          .from('cancellation_refunds')
+          .select('id, amount, refund_date, booking_id')
+          .eq('refund_type', 'held_for_customer')
+          .in('booking_id', bookings.map(b => b.id));
+        heldRefunds = (refunds || []).map(r => {
+          const b = bookings.find(bk => bk.id === r.booking_id);
+          return { id: r.id, amount: r.amount, deposit_date: r.refund_date, notes: `Cancellation — ${b?.projects?.name || ''} Plot ${b?.plots?.plot_number || ''}` };
+        });
+      }
+
+      return [...(deposits || []), ...heldRefunds];
+    },
+  });
+
+  const totalHeldCredit = heldDeposits.reduce((s, d) => s + Number(d.amount), 0);
+
   const isCentsProject = selectedProject?.unit_of_measure === 'cents';
 
   // Prefill agreed rate when plot changes.
@@ -524,6 +565,22 @@ export default function NewBooking() {
               <div className="mt-2 bg-slate-50 rounded-lg p-3 text-sm">
                 <span className="font-medium">{selectedCustomer.name}</span> —{' '}
                 {selectedCustomer.mobile}
+              </div>
+            )}
+            {selectedCustomer && totalHeldCredit > 0 && (
+              <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-green-800 font-medium">💰 Customer has held credit of ₹{totalHeldCredit.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="mt-1 space-y-1">
+                  {heldDeposits.map(d => (
+                    <div key={d.id} className="flex justify-between text-xs text-green-700">
+                      <span>{d.notes || new Date(d.deposit_date).toLocaleDateString('en-IN')}</span>
+                      <span>₹{Number(d.amount).toLocaleString('en-IN')}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-green-600 mt-1">This credit can be applied as advance in the Advance Payment section below.</p>
               </div>
             )}
             <button
