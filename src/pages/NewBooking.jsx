@@ -280,7 +280,7 @@ export default function NewBooking() {
     const glvRate = Number(selectedProject.guideline_value_sqft) || 0;
 
     const landCostBeforeDiscount = isCentsProject
-      ? Math.round(parseFloat((area / CENTS_TO_SQFT).toFixed(2)) * effectiveRateCent) + premium
+      ? Math.round((Math.floor((area / CENTS_TO_SQFT) * 100) / 100) * effectiveRateCent) + premium
       : area * effectiveRate + premium;
     const landCost = landCostBeforeDiscount - discount;
     const glvTotal = area * glvRate;
@@ -298,7 +298,7 @@ export default function NewBooking() {
       // What KSR itself will separately owe the landowner later:
       // (plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
       const landownerRatePerCent = Number(selectedProject.landowner_rate_per_cent) || 0;
-      const areaCents = parseFloat((area / CENTS_TO_SQFT).toFixed(2)); // 2dp — matches landCost rounding
+      const areaCents = Math.floor((area / CENTS_TO_SQFT) * 100) / 100; // floor to 2dp
       ksrOwesLandowner = (areaCents * landownerRatePerCent) - glvTotal;
     }
 
