@@ -12,6 +12,7 @@ const inr = (n) =>
 const REFUND_TYPE_LABELS = {
   cash_refund: 'Cash Refund',
   adjusted_to_booking: 'Adjusted to New Booking',
+  held_for_customer: 'Held for Customer',
 };
 
 export default function Cancellations() {

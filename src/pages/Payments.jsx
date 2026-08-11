@@ -19,6 +19,7 @@ export default function Payments() {
   const [search, setSearch] = useState('');
   const [projectFilter, setProjectFilter] = useState('All');
   const [showSettleModal, setShowSettleModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [expandedRow, setExpandedRow] = useState(null);
 
   const { data: projects = [] } = useQuery({
@@ -69,6 +70,23 @@ export default function Payments() {
     },
   });
 
+  // Bulk landowner payments
+  const { data: bulkPayments = [], isLoading: loadingBulk } = useQuery({
+    queryKey: ['landowner-bulk-payments'],
+    staleTime: 1000 * 60,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('landowner_bulk_payments')
+        .select('id, payment_date, amount, mode, reference_no, notes')
+        .order('payment_date', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const totalBulkPaid = bulkPayments.reduce((s, p) => s + Number(p.amount), 0);
+
   // Landowner payments already made
   const { data: landownerPayments = [], isLoading: loadingPayments } = useQuery({
     queryKey: ['outgoing-landowner-paid', bookingIds.join(',')],
@@ -118,7 +136,7 @@ export default function Payments() {
     },
   });
 
-  const isLoading = loadingBookings || loadingPayments || loadingRefunds;
+  const isLoading = loadingBookings || loadingPayments || loadingRefunds || loadingBulk;
 
   // Build settlement history per booking
   const settlementsByBooking = landownerPayments.reduce((acc, p) => {
@@ -177,7 +195,7 @@ export default function Payments() {
       owesTotal: Number(r.amount),
       paid: Number(r.amount),
       outstanding: 0,
-      label: r.refund_type === 'cash_refund' ? 'Customer Refund' : 'Adjusted to Booking',
+      label: r.refund_type === 'cash_refund' ? 'Cash Refund' : r.refund_type === 'held_for_customer' ? 'Held for Customer' : 'Adjusted to Booking',
       navigateTo: `/cancellations`,
     };
   });
@@ -199,8 +217,9 @@ export default function Payments() {
 
   // Totals
   const totalOwed = filteredLandowner.reduce((s, r) => s + r.owesTotal, 0);
-  const totalPaid = filteredLandowner.reduce((s, r) => s + r.paid, 0);
-  const totalOutstanding = filteredLandowner.reduce((s, r) => s + r.outstanding, 0);
+  const totalPlotWisePaid = filteredLandowner.reduce((s, r) => s + r.paid, 0);
+  const totalPaid = totalPlotWisePaid + totalBulkPaid;
+  const totalOutstanding = totalOwed - totalPaid;
   const totalRefunds = filteredRefunds.reduce((s, r) => s + r.owesTotal, 0);
 
   const statusBadge = (status) => {
@@ -260,14 +279,56 @@ export default function Payments() {
       {/* Landowner Settlements */}
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Landowner Settlements</h2>
-        <button
-          onClick={() => setShowSettleModal(true)}
-          disabled={filteredLandowner.filter(r => r.outstanding > 0).length === 0}
-          className="flex items-center gap-2 bg-[#0a1f44] text-white px-3 py-2 rounded-lg text-sm hover:bg-[#122a5c] disabled:opacity-50"
-        >
-          + Record Settlement
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowBulkModal(true)}
+            disabled={totalOutstanding <= 0}
+            className="flex items-center gap-2 border border-[#0a1f44] text-[#0a1f44] px-3 py-2 rounded-lg text-sm hover:bg-[#0a1f44] hover:text-white disabled:opacity-50 transition"
+          >
+            + Bulk Payment
+          </button>
+          <button
+            onClick={() => setShowSettleModal(true)}
+            disabled={filteredLandowner.filter(r => r.outstanding > 0).length === 0}
+            className="flex items-center gap-2 bg-[#0a1f44] text-white px-3 py-2 rounded-lg text-sm hover:bg-[#122a5c] disabled:opacity-50"
+          >
+            + Plot-wise Settlement
+          </button>
+        </div>
       </div>
+
+      {/* Bulk payments history */}
+      {bulkPayments.length > 0 && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Bulk Payments Made</p>
+          <table className="w-full text-sm">
+            <thead className="text-xs text-blue-600 uppercase">
+              <tr>
+                <th className="text-left py-1">Date</th>
+                <th className="text-left py-1">Mode</th>
+                <th className="text-left py-1">Reference</th>
+                <th className="text-left py-1">Notes</th>
+                <th className="text-right py-1">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bulkPayments.map(p => (
+                <tr key={p.id} className="border-t border-blue-100">
+                  <td className="py-1.5 text-slate-600">{new Date(p.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                  <td className="py-1.5 text-slate-600 uppercase text-xs">{p.mode}</td>
+                  <td className="py-1.5 text-slate-600">{p.reference_no || '—'}</td>
+                  <td className="py-1.5 text-slate-500 text-xs">{p.notes || '—'}</td>
+                  <td className="py-1.5 text-right font-medium text-green-700">{inr(p.amount)}</td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-blue-200 font-semibold">
+                <td colSpan={4} className="py-1.5 text-blue-700">Total Bulk Paid</td>
+                <td className="py-1.5 text-right text-green-700">{inr(totalBulkPaid)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
         {isLoading ? (
           <div className="p-8 text-center text-slate-400">Loading...</div>
@@ -412,6 +473,18 @@ export default function Payments() {
           </table>
         )}
       </div>
+
+      {showBulkModal && (
+        <BulkPaymentModal
+          totalOutstanding={totalOutstanding}
+          onClose={() => setShowBulkModal(false)}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['landowner-bulk-payments'] });
+            setShowBulkModal(false);
+            toast.success('Bulk payment recorded');
+          }}
+        />
+      )}
 
       {showSettleModal && (
         <SettleModal
@@ -592,6 +665,111 @@ function SettleModal({ rows, onClose, onSuccess }) {
           <button onClick={handleSave} disabled={saving || selectedIds.length === 0}
             className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg text-sm hover:bg-[#122a5c] disabled:opacity-50">
             {saving ? 'Saving...' : `Record for ${selectedIds.length} Plot${selectedIds.length !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkPaymentModal({ totalOutstanding, onClose, onSuccess }) {
+  const [form, setForm] = useState({
+    payment_date: new Date().toISOString().slice(0, 10),
+    amount: '',
+    mode: 'neft',
+    reference_no: '',
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!form.amount || Number(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
+    if (Number(form.amount) > totalOutstanding) {
+      toast.error(`Amount cannot exceed outstanding ₹${totalOutstanding.toLocaleString('en-IN')}`);
+      return;
+    }
+    if (!form.reference_no.trim()) { toast.error('Enter reference number'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .schema('ksr')
+        .from('landowner_bulk_payments')
+        .insert({
+          payment_date: form.payment_date,
+          amount: Number(form.amount),
+          mode: form.mode,
+          reference_no: form.reference_no.trim(),
+          notes: form.notes || null,
+        });
+      if (error) throw error;
+      onSuccess();
+    } catch (err) {
+      toast.error(err.message || 'Failed to record payment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold text-slate-800">Bulk Landowner Payment</h2>
+          <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex justify-between text-sm">
+            <span className="text-amber-700">Total Outstanding to Landowners</span>
+            <span className="font-semibold text-amber-800">{inr(totalOutstanding)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-slate-500">Payment Date</label>
+              <input type="date" value={form.payment_date}
+                onChange={e => setForm(f => ({ ...f, payment_date: e.target.value }))}
+                className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Amount (₹)</label>
+              <input type="number" value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                placeholder={`Max: ${inr(totalOutstanding)}`}
+                className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Mode</label>
+              <select value={form.mode}
+                onChange={e => setForm(f => ({ ...f, mode: e.target.value }))}
+                className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30">
+                <option value="neft">NEFT</option>
+                <option value="rtgs">RTGS</option>
+                <option value="imps">IMPS</option>
+                <option value="upi">UPI</option>
+                <option value="cheque">Cheque</option>
+                <option value="cash">Cash</option>
+                <option value="dd">DD</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Reference No. *</label>
+              <input type="text" value={form.reference_no}
+                onChange={e => setForm(f => ({ ...f, reference_no: e.target.value }))}
+                placeholder="UTR / Cheque no."
+                className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Notes</label>
+            <input type="text" value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30" />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg text-sm hover:bg-[#122a5c] disabled:opacity-50">
+            {saving ? 'Saving...' : 'Record Payment'}
           </button>
         </div>
       </div>
