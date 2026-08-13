@@ -732,6 +732,11 @@ export default function NewBooking() {
                 disabled
                 className="input bg-slate-50"
               />
+              {isCentsProject && calc.area && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Calculation uses: <span className="font-semibold">{(Math.floor((calc.area / CENTS_TO_SQFT) * 100) / 100)} Cents</span> (floor to 2dp) × Rate
+                </p>
+              )}
             </Field>
             {isCentsProject ? (
               <Field label="Agreed Rate (₹/Cent)">
@@ -742,7 +747,7 @@ export default function NewBooking() {
                   className="input"
                 />
                 <p className="text-xs text-slate-400 mt-1">
-                  ≈ ₹{effectiveRate.toFixed(2)}/Sq.ft (used at full precision for Land Cost, not rounded)
+                  ≈ ₹{effectiveRate.toFixed(2)}/Sq.ft
                 </p>
               </Field>
             ) : (
