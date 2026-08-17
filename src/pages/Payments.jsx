@@ -530,6 +530,14 @@ function SettleModal({ rows, onClose, onSuccess }) {
   const handleSave = async () => {
     if (selectedIds.length === 0) { toast.error('Select at least one plot'); return; }
     if (!form.amount || Number(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
+    const totalSelected = selectedIds.reduce((s, id) => {
+      const row = rows.find(r => r.id === id);
+      return s + (row ? row.outstanding : 0);
+    }, 0);
+    if (Number(form.amount) > totalSelected) {
+      const proceed = window.confirm(`Amount ₹${Number(form.amount).toLocaleString('en-IN')} exceeds total outstanding ₹${totalSelected.toLocaleString('en-IN')} for selected plots. Do you still want to proceed?`);
+      if (!proceed) return;
+    }
     setSaving(true);
     try {
       const payments = selectedIds.map(bookingId => ({
@@ -684,8 +692,8 @@ function BulkPaymentModal({ totalOutstanding, onClose, onSuccess }) {
   const handleSave = async () => {
     if (!form.amount || Number(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
     if (Number(form.amount) > totalOutstanding) {
-      toast.error(`Amount cannot exceed outstanding ₹${totalOutstanding.toLocaleString('en-IN')}`);
-      return;
+      const proceed = window.confirm(`Amount ₹${Number(form.amount).toLocaleString('en-IN')} exceeds outstanding ₹${totalOutstanding.toLocaleString('en-IN')}. Do you still want to proceed?`);
+      if (!proceed) return;
     }
     setSaving(true);
     try {
