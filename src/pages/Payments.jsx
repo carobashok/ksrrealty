@@ -530,7 +530,6 @@ function SettleModal({ rows, onClose, onSuccess }) {
   const handleSave = async () => {
     if (selectedIds.length === 0) { toast.error('Select at least one plot'); return; }
     if (!form.amount || Number(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
-    if (!form.reference_no.trim()) { toast.error('Enter reference number'); return; }
     setSaving(true);
     try {
       const payments = selectedIds.map(bookingId => ({
@@ -595,7 +594,7 @@ function SettleModal({ rows, onClose, onSuccess }) {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500">Reference No. *</label>
+              <label className="text-xs font-medium text-slate-500">Reference No.</label>
               <input type="text" value={form.reference_no}
                 onChange={e => setForm(f => ({ ...f, reference_no: e.target.value }))}
                 placeholder="UTR / Cheque no."
@@ -688,7 +687,6 @@ function BulkPaymentModal({ totalOutstanding, onClose, onSuccess }) {
       toast.error(`Amount cannot exceed outstanding ₹${totalOutstanding.toLocaleString('en-IN')}`);
       return;
     }
-    if (!form.reference_no.trim()) { toast.error('Enter reference number'); return; }
     setSaving(true);
     try {
       const { error } = await supabase
@@ -751,7 +749,7 @@ function BulkPaymentModal({ totalOutstanding, onClose, onSuccess }) {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500">Reference No. *</label>
+              <label className="text-xs font-medium text-slate-500">Reference No.</label>
               <input type="text" value={form.reference_no}
                 onChange={e => setForm(f => ({ ...f, reference_no: e.target.value }))}
                 placeholder="UTR / Cheque no."
