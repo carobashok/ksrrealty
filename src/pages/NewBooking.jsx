@@ -986,11 +986,15 @@ export default function NewBooking() {
           Cancel
         </button>
         <button
-          onClick={() => submitBookingMutation.mutate()}
-          disabled={submitBookingMutation.isPending || !calc}
+          onClick={() => {
+            if (submitting) return;
+            setSubmitting(true);
+            submitBookingMutation.mutate();
+          }}
+          disabled={submitting || submitBookingMutation.isPending || !calc}
           className="px-6 py-2 bg-[#0a1f44] text-white rounded-lg hover:bg-[#122a5c] disabled:opacity-50"
         >
-          {submitBookingMutation.isPending ? 'Creating Booking...' : 'Create Booking'}
+          {submitting || submitBookingMutation.isPending ? 'Creating Booking...' : 'Create Booking'}
         </button>
       </div>
     </div>
