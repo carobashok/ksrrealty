@@ -55,6 +55,7 @@ export default function NewBooking() {
 
 
   const [tokenAdvance, setTokenAdvance] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [tokenDate, setTokenDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentMode, setPaymentMode] = useState('cash');
   const [referenceNo, setReferenceNo] = useState('');
@@ -464,7 +465,8 @@ export default function NewBooking() {
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
       navigate(`/bookings/${booking.id}`);
     },
-    onError: (err) => toast.error(err.message || 'Failed to create booking'),
+    onError: (err) => { toast.error(err.message || 'Failed to create booking'); setSubmitting(false); },
+    onSettled: () => { setSubmitting(false); },
   });
 
   const inr = (n) =>
