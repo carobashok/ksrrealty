@@ -2,7 +2,8 @@
 import { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { getValidAccessToken, ensureProjectFolder, uploadFileToDrive } from '../lib/googleDrive';
+import { getValidAccessToken, ensureProjectFolder } from '../lib/googleDrive';
+import { uploadFileToDriveDirect } from '../lib/googleDriveDirectUpload';
 import toast from 'react-hot-toast';
 import { Upload, ExternalLink, Trash2, FileText, FolderOpen, RefreshCw, Search } from 'lucide-react';
 
@@ -95,7 +96,7 @@ export default function Documents() {
       const folderId = await ensureProjectFolder(accessToken, project, settings);
       queryClient.invalidateQueries({ queryKey: ['documents-projects'] });
 
-      const { file_id, file_name, web_view_link } = await uploadFileToDrive(accessToken, file, folderId);
+      const { file_id, file_name, web_view_link } = await uploadFileToDriveDirect(accessToken, file, folderId);
 
       const { error } = await supabase
         .schema('ksr')
