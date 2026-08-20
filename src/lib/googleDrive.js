@@ -1,14 +1,13 @@
 // src/lib/googleDrive.js
-// Helper functions for Google Drive OAuth and file operations
-
 import { supabase } from './supabase';
 
 const SETTINGS_ID = '00000000-0000-0000-0000-000000000001';
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI;
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
-// Build the Google OAuth URL
+// Full drive scope needed to access all files owned by user
+const SCOPES = 'https://www.googleapis.com/auth/drive';
+
 export function getGoogleAuthUrl() {
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
@@ -16,12 +15,11 @@ export function getGoogleAuthUrl() {
     response_type: 'code',
     scope: SCOPES,
     access_type: 'offline',
-    prompt: 'consent', // force refresh_token to be returned
+    prompt: 'consent',
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-// Exchange auth code for tokens (via Vercel function)
 export async function exchangeCodeForTokens(code) {
   const res = await fetch('/api/google-auth', {
     method: 'POST',
@@ -30,20 +28,17 @@ export async function exchangeCodeForTokens(code) {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Token exchange failed');
-  return data; // { access_token, refresh_token, expiry }
+  return data;
 }
 
-// Get a valid access token — refreshes if expired
 export async function getValidAccessToken(settings) {
   const now = new Date();
   const expiry = settings.drive_token_expiry ? new Date(settings.drive_token_expiry) : null;
 
-  // If token is still valid (with 5 min buffer), return it
   if (settings.drive_access_token && expiry && expiry > new Date(now.getTime() + 5 * 60 * 1000)) {
     return settings.drive_access_token;
   }
 
-  // Refresh the token
   if (!settings.drive_refresh_token) throw new Error('Google Drive not connected. Please connect in Settings.');
 
   const res = await fetch('/api/google-refresh', {
@@ -54,7 +49,6 @@ export async function getValidAccessToken(settings) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Token refresh failed');
 
-  // Save new access token to DB
   await supabase
     .schema('ksr')
     .from('company_settings')
@@ -67,7 +61,6 @@ export async function getValidAccessToken(settings) {
   return data.access_token;
 }
 
-// Create a folder in Drive, return folder_id
 export async function createDriveFolder(access_token, name, parent_folder_id = null) {
   const res = await fetch('/api/google-upload', {
     method: 'POST',
@@ -79,9 +72,7 @@ export async function createDriveFolder(access_token, name, parent_folder_id = n
   return data.folder_id;
 }
 
-// Upload a file to Drive, return { file_id, file_name, web_view_link }
 export async function uploadFileToDrive(access_token, file, parent_folder_id) {
-  // Convert file to base64
   const base64 = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(',')[1]);
@@ -106,11 +97,9 @@ export async function uploadFileToDrive(access_token, file, parent_folder_id) {
   return data;
 }
 
-// Ensure project folder exists — creates if not, returns folder_id
 export async function ensureProjectFolder(access_token, project, settings) {
   if (project.drive_folder_id) return project.drive_folder_id;
 
-  // Create root KSR folder if not exists
   let rootFolderId = settings.drive_root_folder_id;
   if (!rootFolderId) {
     rootFolderId = await createDriveFolder(access_token, 'KSR Realty');
@@ -121,10 +110,8 @@ export async function ensureProjectFolder(access_token, project, settings) {
       .eq('id', SETTINGS_ID);
   }
 
-  // Create project folder inside root
   const projectFolderId = await createDriveFolder(access_token, project.name, rootFolderId);
 
-  // Save folder ID to project
   await supabase
     .schema('ksr')
     .from('projects')
