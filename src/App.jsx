@@ -21,6 +21,7 @@ import QuotationView from './pages/QuotationView'
 import ReceiptView from './pages/ReceiptView'
 import Settings from './pages/Settings'
 import Cancellations from './pages/Cancellations'
+import Documents from './pages/Documents'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -79,6 +80,7 @@ export default function App() {
               <Route path="channel-partners"           element={<ChannelPartners />} />
               <Route path="settings"                   element={<Settings />} />
               <Route path="cancellations"               element={<Cancellations />} />
+              <Route path="documents"                  element={<Documents />} />
             </Route>
           </Routes>
         </AuthProvider>
