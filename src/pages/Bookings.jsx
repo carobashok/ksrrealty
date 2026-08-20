@@ -63,7 +63,8 @@ export default function Bookings() {
       const { data, error } = await supabase
         .schema('ksr')
         .from('payments')
-        .select('booking_id, amount');
+        .select('booking_id, amount, paid_by')
+        .neq('paid_by', 'ksr'); // exclude KSR→Landowner settlements
       if (error) throw error;
       return data.reduce((acc, p) => {
         acc[p.booking_id] = (acc[p.booking_id] || 0) + Number(p.amount);

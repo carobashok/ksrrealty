@@ -127,11 +127,49 @@ export default function BookingDetail() {
         .from('payments')
         .select('*')
         .eq('booking_id', bookingId)
+        .neq('paid_by', 'ksr')
         .order('payment_date', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
+
+  // Fetch settings for write-off limit
+  const { data: appSettings } = useQuery({
+    queryKey: ['company-settings-writeoff'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('company_settings')
+        .select('max_writeoff_amount')
+        .eq('id', '00000000-0000-0000-0000-000000000001')
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const maxWriteOff = Number(appSettings?.max_writeoff_amount) || 1000;
+
+  const handleWriteOff = async (lo, balance) => {
+    if (!window.confirm(`Write off ₹${balance.toLocaleString('en-IN')} balance for ${lo.landowner_name}? This cannot be undone.`)) return;
+    const { error } = await supabase
+      .schema('ksr')
+      .from('payments')
+      .insert({
+        booking_id: bookingId,
+        payment_type: 'landowner_share',
+        paid_by: 'plot_purchaser',
+        landowner_id: lo.id,
+        payment_date: new Date().toISOString().slice(0, 10),
+        amount: balance,
+        mode: 'write_off',
+        notes: 'Write Off — balance waived',
+      });
+    if (error) { toast.error(error.message); return; }
+    toast.success(`₹${balance.toLocaleString('en-IN')} written off for ${lo.landowner_name}`);
+    queryClient.invalidateQueries({ queryKey: ['booking-payments', bookingId] });
+  };
 
   // Fetch existing incentive split
   const { data: commissions = [], refetch: refetchCommissions } = useQuery({
@@ -670,6 +708,14 @@ export default function BookingDetail() {
                   <span className="font-medium text-slate-800 text-sm">
                     {lo.landowner_name} ({lo.share_pct}%)
                   </span>
+                  {lo.balance > 0 && lo.balance <= maxWriteOff && (
+                    <button
+                      onClick={() => handleWriteOff(lo, lo.balance)}
+                      className="text-xs px-2 py-1 border border-amber-300 text-amber-700 rounded hover:bg-amber-50"
+                    >
+                      Write Off ₹{lo.balance.toLocaleString('en-IN')}
+                    </button>
+                  )}
                 </div>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <SummaryBox label="Due" value={inr(lo.due)} compact />

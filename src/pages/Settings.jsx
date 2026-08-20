@@ -23,6 +23,7 @@ export default function Settings() {
     ifsc_code: '',
     address: '',
     logo_url: '',
+    max_writeoff_amount: 1000,
   });
   const [uploading, setUploading] = useState(false);
   const [connectingDrive, setConnectingDrive] = useState(false);
@@ -79,6 +80,7 @@ export default function Settings() {
         ifsc_code: settings.ifsc_code || '',
         address: settings.address || '',
         logo_url: settings.logo_url || '',
+        max_writeoff_amount: settings.max_writeoff_amount ?? 1000,
       });
     }
   }, [settings]);
@@ -211,6 +213,20 @@ export default function Settings() {
           />
           <p className="text-xs text-slate-400 mt-1">
             Shown in the footer of every quotation and receipt. Put each office on its own line.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-500">Maximum Write-Off Amount (₹)</label>
+          <input
+            type="number"
+            value={form.max_writeoff_amount}
+            onChange={(e) => setForm({ ...form, max_writeoff_amount: Number(e.target.value) })}
+            className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+            placeholder="1000"
+          />
+          <p className="text-xs text-slate-400 mt-1">
+            Write-off button appears in BookingDetail only when landowner balance is within this limit.
           </p>
         </div>
 
