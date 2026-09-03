@@ -42,9 +42,27 @@ export default function PlotInventory() {
 
   const counts = { available:0, blocked:0, booked:0, registered:0 }
   plots?.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++ })
-  const first = plots?.find(p => p.polygon_coords && p.bg_width)
-  const W = first?.bg_width || 800
-  const H = first?.bg_height || 400
+  const hasGeometry = plots?.some(p => Array.isArray(p.polygon_coords) && p.polygon_coords.length)
+
+  // Compute tight bounding box across all plots with geometry
+  const getBounds = () => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    plots?.forEach(p => {
+      if (!Array.isArray(p.polygon_coords)) return
+      p.polygon_coords.forEach(([x, y]) => {
+        if (x < minX) minX = x; if (x > maxX) maxX = x
+        if (y < minY) minY = y; if (y > maxY) maxY = y
+      })
+    })
+    if (!isFinite(minX)) return null
+    const pad = 30
+    return {
+      x: minX - pad,
+      y: minY - pad,
+      w: (maxX - minX) + pad * 2,
+      h: (maxY - minY) + pad * 2,
+    }
+  }
 
   return (
     <div style={{padding:'20px',fontFamily:'Segoe UI,sans-serif'}}>
@@ -55,6 +73,7 @@ export default function PlotInventory() {
         </h1>
       </div>
 
+      {/* Legend */}
       <div style={{display:'flex',gap:'14px',marginBottom:'12px',fontSize:'12px'}}>
         {Object.entries(SL).map(([s,l]) => (
           <span key={s} style={{display:'flex',alignItems:'center',gap:'5px'}}>
@@ -64,6 +83,7 @@ export default function PlotInventory() {
         ))}
       </div>
 
+      {/* Stats */}
       <div style={{display:'flex',gap:'8px',marginBottom:'14px',flexWrap:'wrap'}}>
         {[['Available',counts.available],['Blocked',counts.blocked],['Booked',counts.booked],['Registered',counts.registered],['Total',plots?.length||0]].map(([l,v])=>(
           <div key={l} style={{background:'white',borderRadius:'7px',padding:'8px 14px',textAlign:'center',border:'1px solid #e2e8f0',minWidth:'80px'}}>
@@ -73,35 +93,70 @@ export default function PlotInventory() {
         ))}
       </div>
 
+      {/* Map */}
       {isLoading ? (
         <p style={{color:'#94a3b8',padding:'40px',textAlign:'center'}}>Loading...</p>
-      ) : !first ? (
-        <p style={{color:'#94a3b8',padding:'40px',textAlign:'center'}}>No geometry. Plots: {plots?.length}</p>
-      ) : (
-        <div style={{background:'white',border:'1px solid #e2e8f0',borderRadius:'8px',overflow:'auto'}}>
-          <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} xmlns="http://www.w3.org/2000/svg">
-            {plots.map(p => {
-              const coords = p.polygon_coords
-              if (!Array.isArray(coords) || !coords.length) return null
-              const pts = coords.map(c => `${c[0]},${c[1]}`).join(' ')
-              const cx = coords.reduce((s,c)=>s+c[0],0)/coords.length
-              const cy = coords.reduce((s,c)=>s+c[1],0)/coords.length
-              const fill = SC[p.status] || SC.available
-              const isSelected = sel?.id === p.id
-              return (
-                <g key={p.id} onClick={() => setSel(isSelected ? null : p)} style={{cursor:'pointer'}}>
-                  <polygon points={pts} fill={fill} stroke={isSelected?'#F59E0B':'#1B2A4A'} strokeWidth={isSelected?2.5:1}/>
-                  <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
-                    fontSize="14" fontWeight="600" fill="#1B2A4A" pointerEvents="none">
-                    {p.plot_number}
-                  </text>
-                </g>
-              )
-            })}
-          </svg>
-        </div>
-      )}
+      ) : !hasGeometry ? (
+        <p style={{color:'#94a3b8',padding:'40px',textAlign:'center'}}>No geometry data. Plots: {plots?.length}</p>
+      ) : (() => {
+        const bounds = getBounds()
+        if (!bounds) return null
+        // Scale font relative to layout width — readable at any size
+        const fontSize = Math.max(6, Math.min(18, bounds.w / 55))
 
+        return (
+          <div style={{
+            background:'white',
+            border:'1px solid #e2e8f0',
+            borderRadius:'10px',
+            padding:'12px',
+            // Let the SVG breathe — no overflow:auto, no fixed height
+          }}>
+            <svg
+              viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
+              width="100%"
+              style={{ display:'block', maxHeight:'65vh' }}
+              preserveAspectRatio="xMidYMid meet"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {plots.map(p => {
+                const coords = p.polygon_coords
+                if (!Array.isArray(coords) || !coords.length) return null
+                const pts = coords.map(c => `${c[0]},${c[1]}`).join(' ')
+                const cx = coords.reduce((s,c) => s + c[0], 0) / coords.length
+                const cy = coords.reduce((s,c) => s + c[1], 0) / coords.length
+                const fill = SC[p.status] || SC.available
+                const isSelected = sel?.id === p.id
+                const labelColor = (p.status === 'registered' || p.status === 'booked') ? '#fff' : '#1B2A4A'
+
+                return (
+                  <g key={p.id} onClick={() => setSel(isSelected ? null : p)} style={{cursor:'pointer'}}>
+                    <polygon
+                      points={pts}
+                      fill={fill}
+                      stroke={isSelected ? '#F59E0B' : '#fff'}
+                      strokeWidth={isSelected ? fontSize * 0.5 : fontSize * 0.18}
+                    />
+                    <text
+                      x={cx} y={cy}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={fontSize}
+                      fontWeight="700"
+                      fill={labelColor}
+                      pointerEvents="none"
+                    >
+                      {p.plot_number}
+                    </text>
+                  </g>
+                )
+              })}
+            </svg>
+          </div>
+        )
+      })()}
+
+      {/* Selected plot panel */}
       {sel && (
         <div style={{background:'#EAF1FA',border:'1px solid #b8cde8',borderRadius:'8px',padding:'14px',marginTop:'14px'}}>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}>
