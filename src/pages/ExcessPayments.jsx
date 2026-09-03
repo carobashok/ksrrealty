@@ -9,7 +9,7 @@ const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN')
 const MODES = ['cash', 'cheque', 'neft', 'rtgs', 'upi', 'dd', 'imps']
 
 // ── Settlement Modal ────────────────────────────────────────────────────────
-function SettlementModal({ row, onClose, onDone }) {
+function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
   const qc = useQueryClient()
   const [action, setAction]       = useState(null) // 'refund' | 'adjust' | 'hold'
   const [amount, setAmount]       = useState(String(row.excess))
@@ -36,6 +36,7 @@ function SettlementModal({ row, onClose, onDone }) {
         .eq('customer_id', row.customer_id)
         .neq('id', row.booking_id)
         .in('status', ['booked', 'registered'])
+          .neq('excess_ignored', true)
       if (error) throw error
       return data
     },
@@ -104,6 +105,16 @@ function SettlementModal({ row, onClose, onDone }) {
           })
         if (error) throw error
         toast.success(`${inr(amt)} held as customer deposit`)
+
+      } else if (action === 'ignore') {
+        // Mark booking as excess_ignored — disappears from list
+        const { error } = await supabase
+          .schema('ksr')
+          .from('bookings')
+          .update({ excess_ignored: true })
+          .eq('id', row.booking_id)
+        if (error) throw error
+        toast.success('Excess marked as ignored')
       }
 
       qc.invalidateQueries(['excess-payments'])
@@ -153,6 +164,9 @@ function SettlementModal({ row, onClose, onDone }) {
             { key:'refund',  label:'Refund to Customer',         desc:'Return the excess amount to the customer via cash / bank transfer' },
             { key:'adjust',  label:'Adjust to Another Plot',     desc:'Credit this amount against another booking of the same customer' },
             { key:'hold',    label:'Hold as Customer Deposit',   desc:'Keep as unallocated credit — can be applied to a future booking' },
+            ...(row.excess <= ignoreThreshold ? [
+              { key:'ignore', label:'Ignore', desc:`Excess is within the threshold of ₹${Number(ignoreThreshold).toLocaleString('en-IN')} — mark as tolerated and remove from this list` }
+            ] : []),
           ].map(opt => (
             <label key={opt.key} style={{
               display:'flex',alignItems:'flex-start',gap:'10px',
@@ -286,6 +300,22 @@ function SettlementModal({ row, onClose, onDone }) {
 export default function ExcessPayments() {
   const qc = useQueryClient()
   const [selected, setSelected] = useState(null)
+
+  // Load ignore threshold from settings
+  const { data: settings } = useQuery({
+    queryKey: ['company-settings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('company_settings')
+        .select('excess_ignore_threshold')
+        .eq('id', '00000000-0000-0000-0000-000000000001')
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+  const ignoreThreshold = settings?.excess_ignore_threshold ?? 500
 
   const { data: rows = [], isLoading, refetch } = useQuery({
     queryKey: ['excess-payments'],
@@ -438,6 +468,7 @@ export default function ExcessPayments() {
       {selected && (
         <SettlementModal
           row={selected}
+          ignoreThreshold={ignoreThreshold}
           onClose={() => setSelected(null)}
           onDone={() => {
             setSelected(null)
