@@ -1202,6 +1202,32 @@ function PlotsSection({ proj, projectId }) {
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────
+// ── Documents Panel (collapsible) ──────────────────────────────────────────
+function DocumentsPanelCollapsible({ projectId }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{background:'white',borderRadius:'10px',border:'1px solid #e2e8f0',marginBottom:'16px'}}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',
+          padding:'14px 20px',background:'none',border:'none',cursor:'pointer',
+        }}
+      >
+        <div style={{fontSize:'14px',fontWeight:700,color:'#1B2A4A'}}>Documents</div>
+        <span style={{fontSize:'12px',color:'#64748b',fontWeight:500}}>
+          {open ? '▲ Collapse' : '▼ Expand'}
+        </span>
+      </button>
+      {open && (
+        <div style={{borderTop:'1px solid #f1f5f9'}}>
+          <DocumentsPanelCollapsible projectId={projectId} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProjectDetail() {
   const { projectId } = useParams()
   const qc = useQueryClient()
@@ -1296,7 +1322,7 @@ export default function ProjectDetail() {
       <RatesSection   proj={proj} projectId={projectId} qc={qc} />
       <AssignedEmployeesSection projectId={projectId} qc={qc} />
       <AssignedChannelPartnersSection projectId={projectId} qc={qc} />
-      <DocumentsPanel projectId={projectId} />
+      <DocumentsPanelCollapsible projectId={projectId} />
       <LandownersSection proj={proj} projectId={projectId} qc={qc} />
       <PLCSection proj={proj} projectId={projectId} qc={qc} />
       <PlotsSection proj={proj} projectId={projectId} />
