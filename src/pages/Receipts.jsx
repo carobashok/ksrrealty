@@ -54,7 +54,7 @@ export default function Receipts() {
     },
   });
 
-  // All payments — including split ones
+  // All customer receipts
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ['all-receipts'],
     queryFn: async () => {
@@ -71,15 +71,7 @@ export default function Receipts() {
             projects ( id, name ),
             plots ( plot_number, block )
           ),
-          project_landowners ( landowner_name ),
-          booking_payment_splits (
-            id, amount, remarks,
-            bookings (
-              customers ( name, mobile ),
-              projects ( name ),
-              plots ( plot_number, block )
-            )
-          )
+          project_landowners ( landowner_name )
         `)
         .eq('paid_by', 'plot_purchaser')
         .order('payment_date', { ascending: false });
@@ -88,7 +80,38 @@ export default function Receipts() {
     },
   });
 
-  const filtered = payments.filter(p => {
+  // Split details fetched separately to avoid nested join issues
+  const splitPaymentIds = payments.filter(p => p.is_split).map(p => p.id);
+  const { data: allSplits = [] } = useQuery({
+    queryKey: ['all-receipt-splits', splitPaymentIds.join(',')],
+    enabled: splitPaymentIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('booking_payment_splits')
+        .select(`
+          id, payment_id, amount, remarks,
+          bookings (
+            id,
+            customers ( name, mobile ),
+            projects ( id, name ),
+            plots ( plot_number, block )
+          )
+        `)
+        .in('payment_id', splitPaymentIds);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Attach splits to parent payment
+  const paymentsWithSplits = payments.map(p =>
+    p.is_split
+      ? { ...p, booking_payment_splits: allSplits.filter(s => s.payment_id === p.id) }
+      : p
+  );
+
+  const filtered = paymentsWithSplits.filter(p => {
     const matchesType    = typeFilter === 'All' || p.payment_type === typeFilter;
     const matchesFrom    = !dateFrom || p.payment_date >= dateFrom;
     const matchesTo      = !dateTo   || p.payment_date <= dateTo;
@@ -114,7 +137,8 @@ export default function Receipts() {
     return matchesProject && matchesType && matchesFrom && matchesTo && matchesSearch;
   });
 
-  const totalCollected = filtered.reduce((s,p) => s + Number(p.amount), 0);
+  const totalCollected = filtered.filter(p => !p.is_split).reduce((s,p) => s + Number(p.amount), 0)
+    + allSplits.filter(s => filtered.some(p => p.id === s.payment_id)).reduce((s,sp) => s + Number(sp.amount), 0);
 
   const filteredCustomers = multiCustomers.filter(c =>
     !customerSearch || c.name?.toLowerCase().includes(customerSearch.toLowerCase())
