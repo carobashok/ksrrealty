@@ -134,6 +134,39 @@ export default function BookingDetail() {
     },
   });
 
+  // Split payments — entries from multi-booking receipts allocated to this booking
+  const { data: splitPayments = [] } = useQuery({
+    queryKey: ['booking-splits', bookingId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('booking_payment_splits')
+        .select(`
+          id, amount, remarks,
+          payments ( id, payment_date, mode, reference_no, receipt_no )
+        `)
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Normalise split payments to same shape as regular payments for unified ledger
+  const splitLedgerRows = splitPayments.map(sp => ({
+    id:           sp.id,
+    payment_date: sp.payments?.payment_date,
+    amount:       sp.amount,
+    mode:         sp.payments?.mode,
+    reference_no: sp.payments?.reference_no,
+    receipt_no:   sp.payments?.receipt_no,
+    notes:        sp.remarks,
+    payment_type: 'company_share',
+    paid_by:      'plot_purchaser',
+    _isMultiPlot: true,
+    _paymentId:   sp.payments?.id,
+  }));
+
   // Fetch settings for write-off limit
   const { data: appSettings } = useQuery({
     queryKey: ['company-settings-writeoff'],
@@ -448,10 +481,17 @@ export default function BookingDetail() {
 
   const isJv = booking.projects?.is_jv;
 
-  // Company share ledger
+  // Merge regular + split payments into unified ledger, sorted by date
+  const allPayments = [
+    ...payments,
+    ...splitLedgerRows,
+  ].sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
+
+  // Company share ledger — includes split payments
   const companyPaid = payments
     .filter((p) => p.payment_type === 'company_share')
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+    .reduce((sum, p) => sum + Number(p.amount), 0)
+    + splitLedgerRows.reduce((sum, p) => sum + Number(p.amount), 0);
   const companyDue = (Number(booking.company_share_amt) || 0) + (Number(booking.construction_amount) || 0);
   const companyBalance = companyDue - companyPaid;
 
@@ -1037,7 +1077,7 @@ export default function BookingDetail() {
           </div>
         )}
 
-        {payments.length === 0 ? (
+        {allPayments.length === 0 ? (
           <div className="text-slate-400 text-sm py-4">No payments recorded yet.</div>
         ) : (
           <table className="w-full text-sm">
@@ -1052,7 +1092,7 @@ export default function BookingDetail() {
               </tr>
             </thead>
             <tbody>
-              {payments.map((p) => {
+              {allPayments.map((p) => {
                 const lo = landowners.find((l) => l.id === p.landowner_id);
                 return (
                   <tr key={p.id} className="border-t border-slate-100">
@@ -1067,6 +1107,11 @@ export default function BookingDetail() {
                       {p.payment_type === 'landowner_share'
                         ? `Landowner${lo ? ` — ${lo.landowner_name}` : ''}`
                         : 'Company (KSR)'}
+                      {p._isMultiPlot && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-blue-50 text-blue-700 border border-blue-200">
+                          Multi-plot
+                        </span>
+                      )}
                       {p.is_construction && (
                         <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 border border-orange-200">
                           🏗 Construction
@@ -1080,25 +1125,34 @@ export default function BookingDetail() {
                       {inr(p.amount)}
                     </td>
                     <td className="py-2 text-right whitespace-nowrap">
+                      {/* Receipt: for split rows navigate to parent payment */}
                       <button
-                        onClick={() => navigate(`/bookings/${bookingId}/payments/${p.id}/receipt`)}
+                        onClick={() => p._isMultiPlot
+                          ? navigate(`/bookings/${bookingId}/payments/${p._paymentId}/receipt`)
+                          : navigate(`/bookings/${bookingId}/payments/${p.id}/receipt`)
+                        }
                         className="p-1 text-slate-400 hover:text-[#0a1f44] hover:bg-slate-100 rounded"
                         title="Generate Receipt"
                       >
                         <Receipt size={14} />
                       </button>
+                      {/* Edit/Delete only for regular payments, not split rows */}
+                      {!p._isMultiPlot && (
                       <button
                         onClick={() => openEditPayment(p)}
                         className="p-1 text-slate-400 hover:text-[#0a1f44] hover:bg-slate-100 rounded ml-1"
                       >
                         <Pencil size={14} />
                       </button>
+                      )}
+                      {!p._isMultiPlot && (
                       <button
                         onClick={() => setDeleteTarget(p)}
                         className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded ml-1"
                       >
                         <Trash2 size={14} />
                       </button>
+                      )}
                     </td>
                   </tr>
                 );
