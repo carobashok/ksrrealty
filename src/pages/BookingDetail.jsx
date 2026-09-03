@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, Pencil, Trash2, X, FileText, Receipt, Ban, ChevronDown } from 'lucide-react';
+import MultiBookingReceiptModal from '../components/MultiBookingReceiptModal';
 
 const PAYMENT_MODES = [
   { value: 'cash', label: 'Cash' },
@@ -38,6 +39,8 @@ export default function BookingDetail() {
   const queryClient = useQueryClient();
 
   const [showAddPayment, setShowAddPayment] = useState(false);
+  const [paymentScope, setPaymentScope] = useState('single'); // 'single' | 'multi'
+  const [showMultiModal, setShowMultiModal] = useState(false);
 
   // Incentive split state
   const [incentiveRows, setIncentiveRows] = useState([{ employee_id: '', amount: '' }]);
@@ -151,6 +154,24 @@ export default function BookingDetail() {
       return data;
     },
   });
+
+  // Check if customer has other active bookings (for multi-plot payment option)
+  const { data: otherBookings = [] } = useQuery({
+    queryKey: ['customer-other-bookings', booking?.customer_id, bookingId],
+    enabled: !!booking?.customer_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('id')
+        .eq('customer_id', booking.customer_id)
+        .in('status', ['booked', 'registered'])
+        .neq('id', bookingId);
+      if (error) throw error;
+      return data;
+    },
+  });
+  const hasMultipleBookings = otherBookings.length > 0;
 
   // Normalise split payments to same shape as regular payments for unified ledger
   const splitLedgerRows = splitPayments.map(sp => ({
@@ -951,7 +972,7 @@ export default function BookingDetail() {
             Payment History
           </h3>
           <button
-            onClick={() => setShowAddPayment((s) => !s)}
+            onClick={() => { setShowAddPayment((s) => !s); setPaymentScope('single'); }}
             className="flex items-center gap-1 text-sm bg-[#0a1f44] text-white px-3 py-1.5 rounded-lg hover:bg-[#122a5c]"
           >
             <Plus size={14} /> Add Payment
@@ -959,6 +980,57 @@ export default function BookingDetail() {
         </div>
 
         {showAddPayment && (
+          /* Scope selector — only shown when customer has multiple bookings */
+          hasMultipleBookings && paymentScope === 'single' ? (
+            <div className="bg-slate-50 rounded-lg p-4 mb-4 border border-slate-200">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                This payment covers
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-white cursor-pointer hover:border-[#0a1f44]/30">
+                  <input type="radio" name="scope" value="single"
+                    checked={paymentScope === 'single'}
+                    onChange={() => setPaymentScope('single')}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">
+                      This plot only
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {booking.projects?.name} · Plot {booking.plots?.plot_number}
+                    </div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50 cursor-pointer hover:border-blue-400">
+                  <input type="radio" name="scope" value="multi"
+                    checked={paymentScope === 'multi'}
+                    onChange={() => {
+                      setPaymentScope('multi')
+                      setShowAddPayment(false)
+                      setShowMultiModal(true)
+                    }}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-blue-800">
+                      Split across multiple plots
+                    </div>
+                    <div className="text-xs text-blue-600 mt-0.5">
+                      {booking.customers?.name} has {otherBookings.length + 1} active bookings — allocate this payment across them
+                    </div>
+                  </div>
+                </label>
+              </div>
+              <div className="flex justify-end mt-3">
+                <button onClick={() => setShowAddPayment(false)}
+                  className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : paymentScope === 'single' &&
+          (
           <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1075,6 +1147,7 @@ export default function BookingDetail() {
               </button>
             </div>
           </div>
+          )
         )}
 
         {allPayments.length === 0 ? (
@@ -1424,6 +1497,19 @@ export default function BookingDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Multi-plot receipt modal */}
+      {showMultiModal && booking && (
+        <MultiBookingReceiptModal
+          customerId={booking.customer_id}
+          customerName={booking.customers?.name}
+          onClose={() => { setShowMultiModal(false); setPaymentScope('single'); }}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['booking-splits', bookingId] });
+            queryClient.invalidateQueries({ queryKey: ['all-receipts'] });
+          }}
+        />
       )}
 
       {/* Delete Confirmation */}
