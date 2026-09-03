@@ -1,24 +1,165 @@
 // src/components/MultiBookingReceiptModal.jsx
-// Records one receipt split manually across multiple bookings of the same customer
-
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { X, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { X, Plus, Trash2, ChevronDown, ChevronRight, AlertCircle, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const MODES = ['cash','cheque','neft','rtgs','upi','dd','imps']
 const inr = (n) => '₹' + Number(n||0).toLocaleString('en-IN')
 
+// One split line inside a plot section
+function SplitLine({ line, onChange, onRemove, landowners, isJv }) {
+  const typeOptions = [
+    { value: 'company_share', label: 'Company (KSR)' },
+    ...(isJv ? landowners.map(lo => ({ value: lo.id, label: lo.landowner_name })) : []),
+  ]
+
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'160px 130px 1fr 28px',gap:'6px',alignItems:'center'}}>
+      {/* Type */}
+      <select
+        value={line.type_key}
+        onChange={e => onChange({ ...line, type_key: e.target.value })}
+        style={{padding:'5px 8px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'12px',background:'white'}}
+      >
+        {typeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {/* Amount */}
+      <input
+        type="number"
+        value={line.amount}
+        onChange={e => onChange({ ...line, amount: e.target.value })}
+        placeholder="Amount ₹"
+        style={{padding:'5px 8px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'12px',fontWeight:600}}
+      />
+      {/* Remarks */}
+      <input
+        value={line.remarks}
+        onChange={e => onChange({ ...line, remarks: e.target.value })}
+        placeholder="Remarks (e.g. Advance, 2nd instalment...)"
+        style={{padding:'5px 8px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'12px'}}
+      />
+      {/* Remove */}
+      <button onClick={onRemove} style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:0,display:'flex',alignItems:'center'}}>
+        <Trash2 size={13}/>
+      </button>
+    </div>
+  )
+}
+
+// One collapsible plot section
+function PlotSection({ booking, landowners, checked, onToggle, lines, onLinesChange }) {
+  const [open, setOpen] = useState(true)
+  const isJv = landowners.length > 0
+  const plotTotal = lines.reduce((s,l) => s + (parseFloat(l.amount)||0), 0)
+
+  const addLine = () => {
+    onLinesChange([...lines, { id: Date.now(), type_key: 'company_share', amount: '', remarks: '' }])
+  }
+
+  const updateLine = (id, updated) => {
+    onLinesChange(lines.map(l => l.id === id ? updated : l))
+  }
+
+  const removeLine = (id) => {
+    onLinesChange(lines.filter(l => l.id !== id))
+  }
+
+  const plotLabel = booking.plots?.plot_number
+    ? `Plot ${booking.plots.plot_number}${booking.plots.block ? ` (${booking.plots.block})` : ''}`
+    : 'Plot —'
+
+  return (
+    <div style={{
+      border: `1px solid ${checked ? '#1B2A4A' : '#e2e8f0'}`,
+      borderRadius:'8px',
+      overflow:'hidden',
+      opacity: checked ? 1 : 0.5,
+    }}>
+      {/* Header */}
+      <div style={{
+        display:'flex',alignItems:'center',gap:'10px',
+        padding:'10px 12px',
+        background: checked ? '#f8fafc' : '#f1f5f9',
+        cursor:'pointer',
+      }}>
+        {/* Checkbox */}
+        <input type="checkbox" checked={checked} onChange={onToggle}
+          style={{width:'15px',height:'15px',cursor:'pointer',flexShrink:0}}
+          onClick={e => e.stopPropagation()}
+        />
+        {/* Plot info */}
+        <div style={{flex:1}} onClick={() => checked && setOpen(o=>!o)}>
+          <span style={{fontWeight:700,color:'#1B2A4A',fontSize:'13px'}}>{plotLabel}</span>
+          <span style={{color:'#64748b',fontSize:'12px',marginLeft:'8px'}}>{booking.projects?.name}</span>
+          {isJv && <span style={{marginLeft:'6px',fontSize:'10px',padding:'1px 5px',borderRadius:'10px',background:'#fef3c7',color:'#92400e',fontWeight:600}}>JV</span>}
+        </div>
+        {/* Plot total + chevron */}
+        {checked && (
+          <>
+            <span style={{fontSize:'12px',color: plotTotal>0 ? '#1B2A4A' : '#94a3b8',fontWeight:600}}>
+              {plotTotal > 0 ? inr(plotTotal) : '—'}
+            </span>
+            <span onClick={() => setOpen(o=>!o)} style={{cursor:'pointer',color:'#94a3b8'}}>
+              {open ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+            </span>
+          </>
+        )}
+        {!checked && (
+          <span style={{fontSize:'11px',color:'#94a3b8'}}>excluded</span>
+        )}
+      </div>
+
+      {/* Lines */}
+      {checked && open && (
+        <div style={{padding:'10px 12px',display:'flex',flexDirection:'column',gap:'6px',background:'white'}}>
+          {/* Column headers */}
+          {lines.length > 0 && (
+            <div style={{display:'grid',gridTemplateColumns:'160px 130px 1fr 28px',gap:'6px',marginBottom:'2px'}}>
+              <div style={{fontSize:'10px',color:'#94a3b8',fontWeight:600}}>TYPE</div>
+              <div style={{fontSize:'10px',color:'#94a3b8',fontWeight:600}}>AMOUNT</div>
+              <div style={{fontSize:'10px',color:'#94a3b8',fontWeight:600}}>REMARKS</div>
+              <div/>
+            </div>
+          )}
+          {lines.map(l => (
+            <SplitLine
+              key={l.id}
+              line={l}
+              landowners={landowners}
+              isJv={isJv}
+              onChange={updated => updateLine(l.id, updated)}
+              onRemove={() => removeLine(l.id)}
+            />
+          ))}
+          <button onClick={addLine} style={{
+            display:'flex',alignItems:'center',gap:'4px',
+            padding:'4px 0',background:'none',border:'none',
+            cursor:'pointer',color:'#1B2A4A',fontSize:'12px',fontWeight:600,
+            alignSelf:'flex-start'
+          }}>
+            <Plus size={12}/> Add line
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function MultiBookingReceiptModal({ customerId, customerName, onClose, onSaved }) {
   const qc = useQueryClient()
 
-  const [date, setDate]         = useState(new Date().toISOString().slice(0,10))
-  const [mode, setMode]         = useState('cash')
-  const [refNo, setRefNo]       = useState('')
+  const [date, setDate]       = useState(new Date().toISOString().slice(0,10))
+  const [mode, setMode]       = useState('cash')
+  const [refNo, setRefNo]     = useState('')
   const [totalAmount, setTotal] = useState('')
-  const [splits, setSplits]     = useState({})   // bookingId → { amount, remarks }
-  const [saving, setSaving]     = useState(false)
+  const [saving, setSaving]   = useState(false)
+
+  // checked: which bookings are included
+  const [checked, setChecked] = useState({})
+  // lines: { [bookingId]: [{id, type_key, amount, remarks}] }
+  const [lines, setLines]     = useState({})
 
   // Load all active bookings for this customer
   const { data: bookings = [], isLoading } = useQuery({
@@ -28,77 +169,108 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
         .schema('ksr')
         .from('bookings')
         .select(`
-          id, booking_date, total_price,
+          id, booking_date, total_price, project_id,
           plots ( plot_number, block ),
-          projects ( name )
+          projects ( id, name, is_jv )
         `)
         .eq('customer_id', customerId)
-        .in('status', ['booked', 'registered'])
+        .in('status', ['booked','registered'])
         .order('booking_date')
+      if (error) throw error
+      // Init checked and lines
+      const c = {}, l = {}
+      data.forEach(b => {
+        c[b.id] = true
+        l[b.id] = [{ id: Date.now() + Math.random(), type_key: 'company_share', amount: '', remarks: '' }]
+      })
+      setChecked(c)
+      setLines(l)
+      return data
+    },
+  })
+
+  // Load landowners for each unique project
+  const projectIds = [...new Set(bookings.map(b => b.project_id).filter(Boolean))]
+  const { data: allLandowners = [] } = useQuery({
+    queryKey: ['landowners-for-projects', projectIds.join(',')],
+    enabled: projectIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('project_landowners')
+        .select('id, landowner_name, project_id')
+        .in('project_id', projectIds)
+        .order('sort_order')
       if (error) throw error
       return data
     },
   })
 
-  // Initialise split rows when bookings load
-  const initSplits = (bks) => {
-    const s = {}
-    bks.forEach(b => { s[b.id] = { amount: '', remarks: '' } })
-    setSplits(s)
-  }
-  if (bookings.length && !Object.keys(splits).length) initSplits(bookings)
+  const getLandowners = (projectId) => allLandowners.filter(lo => lo.project_id === projectId)
 
-  const setSplit = (bookingId, field, value) => {
-    setSplits(prev => ({ ...prev, [bookingId]: { ...prev[bookingId], [field]: value } }))
-  }
+  // Totals
+  const totalAllocated = bookings
+    .filter(b => checked[b.id])
+    .flatMap(b => lines[b.id] || [])
+    .reduce((s, l) => s + (parseFloat(l.amount)||0), 0)
 
-  const totalSplit = Object.values(splits).reduce((s, v) => s + (parseFloat(v.amount)||0), 0)
-  const totalAmt   = parseFloat(totalAmount) || 0
-  const diff       = totalAmt - totalSplit
-  const balanced   = totalAmt > 0 && Math.abs(diff) < 0.01
+  const totalAmt  = parseFloat(totalAmount) || 0
+  const diff      = totalAmt - totalAllocated
+  const balanced  = totalAmt > 0 && Math.abs(diff) < 0.01
+
+  const toggleBooking = (bookingId) => {
+    setChecked(prev => ({ ...prev, [bookingId]: !prev[bookingId] }))
+  }
 
   const handleSave = async () => {
-    if (!totalAmt || totalAmt <= 0) { toast.error('Enter total amount'); return }
+    if (!totalAmt || totalAmt <= 0) { toast.error('Enter total amount received'); return }
     if (!balanced) { toast.error('Split amounts must equal total'); return }
 
-    const activeSplits = Object.entries(splits).filter(([, v]) => parseFloat(v.amount) > 0)
-    if (!activeSplits.length) { toast.error('Enter amount for at least one plot'); return }
+    const activeSplitLines = bookings
+      .filter(b => checked[b.id])
+      .flatMap(b => (lines[b.id]||[])
+        .filter(l => parseFloat(l.amount) > 0)
+        .map(l => ({
+          booking_id:   b.id,
+          payment_type: l.type_key === 'company_share' ? 'company_share' : 'landowner_share',
+          landowner_id: l.type_key === 'company_share' ? null : l.type_key,
+          amount:       parseFloat(l.amount),
+          remarks:      l.remarks || null,
+        }))
+      )
+
+    if (!activeSplitLines.length) { toast.error('Enter at least one amount'); return }
 
     setSaving(true)
     try {
-      // 1. Get next receipt number
-      const { data: seqData, error: seqErr } = await supabase
-        .schema('ksr')
-        .rpc('nextval', { seq: 'ksr.receipt_no_seq' })
-      // Fallback: use timestamp if RPC not available
-      const receiptNo = seqData ? `REC-${seqData}` : `REC-${Date.now()}`
-
-      // 2. Insert one payment row (booking_id null, is_split true)
+      // Insert payment row
       const { data: payment, error: payErr } = await supabase
         .schema('ksr')
         .from('payments')
         .insert({
           booking_id:   null,
           is_split:     true,
-          payment_type: 'company_share',
+          payment_type: 'company_share', // header level — detail in splits
           paid_by:      'plot_purchaser',
           payment_date: date,
           amount:       totalAmt,
           mode:         mode,
           reference_no: refNo || null,
-          receipt_no:   receiptNo,
         })
         .select('id')
         .single()
       if (payErr) throw payErr
 
-      // 3. Insert split rows
-      const splitRows = activeSplits.map(([bookingId, v]) => ({
-        payment_id: payment.id,
-        booking_id: bookingId,
-        amount:     parseFloat(v.amount),
-        remarks:    v.remarks || null,
+      // Insert split rows
+      const splitRows = activeSplitLines.map(l => ({
+        payment_id:   payment.id,
+        booking_id:   l.booking_id,
+        payment_type: l.payment_type,
+        landowner_id: l.landowner_id,
+        amount:       l.amount,
+        remarks:      l.remarks,
       }))
+
       const { error: splitErr } = await supabase
         .schema('ksr')
         .from('booking_payment_splits')
@@ -107,15 +279,12 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
 
       toast.success('Receipt saved')
       qc.invalidateQueries(['all-receipts'])
-      qc.invalidateQueries(['customer-active-bookings', customerId])
-      // Invalidate each booking's payment ledger
-      activeSplits.forEach(([bookingId]) => {
-        qc.invalidateQueries(['payments', bookingId])
-        qc.invalidateQueries(['booking-splits', bookingId])
+      bookings.filter(b => checked[b.id]).forEach(b => {
+        qc.invalidateQueries(['booking-splits', b.id])
       })
       onSaved?.()
       onClose()
-    } catch (e) {
+    } catch(e) {
       toast.error(e.message)
     } finally {
       setSaving(false)
@@ -129,13 +298,13 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
     }}>
       <div style={{
         background:'white',borderRadius:'12px',padding:'24px',
-        width:'100%',maxWidth:'640px',maxHeight:'90vh',overflowY:'auto',
+        width:'100%',maxWidth:'680px',maxHeight:'92vh',overflowY:'auto',
         boxShadow:'0 20px 60px rgba(0,0,0,0.2)'
       }}>
         {/* Header */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}}>
           <div>
-            <div style={{fontSize:'16px',fontWeight:700,color:'#1B2A4A'}}>Record Receipt</div>
+            <div style={{fontSize:'16px',fontWeight:700,color:'#1B2A4A'}}>Multi-plot Receipt</div>
             <div style={{fontSize:'12px',color:'#64748b',marginTop:'2px'}}>{customerName}</div>
           </div>
           <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8'}}>
@@ -143,95 +312,57 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
           </button>
         </div>
 
-        {/* Payment details */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'20px'}}>
+        {/* Payment header fields */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'16px'}}>
           <div>
-            <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px'}}>Date *</div>
+            <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px',fontWeight:600}}>DATE *</div>
             <input type="date" value={date} onChange={e=>setDate(e.target.value)}
               style={{width:'100%',padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',boxSizing:'border-box'}}/>
           </div>
           <div>
-            <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px'}}>Mode *</div>
+            <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px',fontWeight:600}}>MODE *</div>
             <select value={mode} onChange={e=>setMode(e.target.value)}
               style={{width:'100%',padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',background:'white',boxSizing:'border-box'}}>
               {MODES.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
             </select>
           </div>
           <div>
-            <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px'}}>Reference No.</div>
+            <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px',fontWeight:600}}>REFERENCE NO.</div>
             <input value={refNo} onChange={e=>setRefNo(e.target.value)} placeholder="UTR / Cheque no."
               style={{width:'100%',padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',boxSizing:'border-box'}}/>
           </div>
         </div>
 
         {/* Total amount */}
-        <div style={{background:'#f8fafc',borderRadius:'8px',padding:'14px',marginBottom:'20px'}}>
-          <div style={{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:600}}>Total Amount Received (₹)</div>
+        <div style={{background:'#f8fafc',borderRadius:'8px',padding:'12px 14px',marginBottom:'16px'}}>
+          <div style={{fontSize:'11px',color:'#64748b',marginBottom:'6px',fontWeight:600}}>TOTAL AMOUNT RECEIVED (₹)</div>
           <input
-            type="number"
-            value={totalAmount}
-            onChange={e=>setTotal(e.target.value)}
+            type="number" value={totalAmount} onChange={e=>setTotal(e.target.value)}
             placeholder="0"
-            style={{width:'100%',padding:'10px 12px',border:'2px solid #1B2A4A',borderRadius:'8px',fontSize:'18px',fontWeight:700,color:'#1B2A4A',boxSizing:'border-box'}}
+            style={{width:'100%',padding:'10px 12px',border:'2px solid #1B2A4A',borderRadius:'8px',fontSize:'20px',fontWeight:700,color:'#1B2A4A',boxSizing:'border-box'}}
           />
         </div>
 
-        {/* Split across bookings */}
-        <div style={{fontSize:'12px',fontWeight:700,color:'#1B2A4A',marginBottom:'10px'}}>
-          Split across plots
+        {/* Plot sections */}
+        <div style={{fontSize:'11px',fontWeight:700,color:'#1B2A4A',marginBottom:'8px',letterSpacing:'0.05em'}}>
+          ALLOCATE ACROSS PLOTS
         </div>
 
         {isLoading ? (
           <div style={{color:'#94a3b8',padding:'20px',textAlign:'center',fontSize:'13px'}}>Loading bookings...</div>
-        ) : bookings.length === 0 ? (
-          <div style={{color:'#94a3b8',padding:'20px',textAlign:'center',fontSize:'13px'}}>No active bookings found for this customer.</div>
         ) : (
           <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'16px'}}>
-            {bookings.map(b => {
-              const plotLabel = b.plots?.plot_number
-                ? `Plot ${b.plots.plot_number}${b.plots.block ? ` (${b.plots.block})` : ''}`
-                : 'Plot —'
-              const sp = splits[b.id] || { amount:'', remarks:'' }
-              return (
-                <div key={b.id} style={{
-                  background:'#f8fafc',borderRadius:'8px',padding:'12px',
-                  border:'1px solid #e2e8f0'
-                }}>
-                  {/* Plot info */}
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}>
-                    <div>
-                      <span style={{fontWeight:700,color:'#1B2A4A',fontSize:'13px'}}>{plotLabel}</span>
-                      <span style={{color:'#64748b',fontSize:'12px',marginLeft:'8px'}}>{b.projects?.name}</span>
-                    </div>
-                    <span style={{fontSize:'12px',color:'#64748b'}}>
-                      Total: {inr(b.total_price)}
-                    </span>
-                  </div>
-                  {/* Amount + Remarks */}
-                  <div style={{display:'grid',gridTemplateColumns:'140px 1fr',gap:'8px'}}>
-                    <div>
-                      <div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Amount (₹)</div>
-                      <input
-                        type="number"
-                        value={sp.amount}
-                        onChange={e=>setSplit(b.id,'amount',e.target.value)}
-                        placeholder="0"
-                        style={{width:'100%',padding:'6px 10px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',fontWeight:600,boxSizing:'border-box'}}
-                      />
-                    </div>
-                    <div>
-                      <div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Remarks</div>
-                      <input
-                        value={sp.remarks}
-                        onChange={e=>setSplit(b.id,'remarks',e.target.value)}
-                        placeholder="e.g. Advance, 2nd instalment..."
-                        style={{width:'100%',padding:'6px 10px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',boxSizing:'border-box'}}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+            {bookings.map(b => (
+              <PlotSection
+                key={b.id}
+                booking={b}
+                landowners={getLandowners(b.project_id)}
+                checked={!!checked[b.id]}
+                onToggle={() => toggleBooking(b.id)}
+                lines={lines[b.id] || []}
+                onLinesChange={newLines => setLines(prev => ({ ...prev, [b.id]: newLines }))}
+              />
+            ))}
           </div>
         )}
 
@@ -249,10 +380,13 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
             }
             <div style={{fontSize:'13px',flex:1}}>
               <span style={{fontWeight:600,color: balanced?'#16a34a':'#ef4444'}}>
-                {balanced ? 'Balanced' : `${diff > 0 ? 'Under-allocated' : 'Over-allocated'} by ${inr(Math.abs(diff))}`}
+                {balanced
+                  ? 'Balanced'
+                  : `${diff > 0 ? 'Under-allocated' : 'Over-allocated'} by ${inr(Math.abs(diff))}`
+                }
               </span>
-              <span style={{color:'#64748b',marginLeft:'8px'}}>
-                Allocated {inr(totalSplit)} of {inr(totalAmt)}
+              <span style={{color:'#64748b',marginLeft:'8px',fontSize:'12px'}}>
+                Allocated {inr(totalAllocated)} of {inr(totalAmt)}
               </span>
             </div>
           </div>
@@ -274,7 +408,7 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
               fontSize:'13px',fontWeight:600,
               cursor: balanced ? 'pointer' : 'not-allowed'
             }}>
-            {saving ? 'Saving…' : 'Save Receipt'}
+            {saving ? 'Saving...' : 'Save Receipt'}
           </button>
         </div>
       </div>
