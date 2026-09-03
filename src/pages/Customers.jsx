@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { Search, Plus, Pencil, Trash2, X, Phone, Mail, MapPin, Wallet } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, X, Phone, Mail, MapPin, Wallet, HelpCircle } from 'lucide-react';
+import CustomersHelp from '../components/help/CustomersHelp';
 
 
 const emptyForm = { id: null, name: '', mobile: '', email: '', address: '', pan: '', aadhaar: '' };
@@ -11,6 +12,7 @@ const emptyForm = { id: null, name: '', mobile: '', email: '', address: '', pan:
 export default function Customers() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isEdit, setIsEdit] = useState(false);
@@ -217,13 +219,22 @@ export default function Customers() {
           <h1 className="text-2xl font-semibold text-slate-800">Customers</h1>
           <p className="text-sm text-slate-500">{customers.length} total</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 bg-[#0a1f44] text-white px-4 py-2 rounded-lg hover:bg-[#122a5c] transition"
-        >
-          <Plus size={18} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHelp(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition text-sm"
+          >
+            <HelpCircle size={16} />
+            Help
+          </button>
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-2 bg-[#0a1f44] text-white px-4 py-2 rounded-lg hover:bg-[#122a5c] transition"
+          >
+            <Plus size={18} />
           New Customer
         </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -583,6 +594,7 @@ export default function Customers() {
           </div>
         </div>
       )}
+      {showHelp && <CustomersHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
