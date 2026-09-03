@@ -1,9 +1,11 @@
 // src/pages/Employees.jsx
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState as useHelpState } from 'react';
+import EmployeesHelp from '../components/help/EmployeesHelp';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { Search, Plus, Pencil, Trash2, X, Phone, Mail } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, X, Phone, Mail , HelpCircle } from 'lucide-react';
 
 // Must exactly match the DB check constraint "employees_role_check"
 const ROLE_OPTIONS = [
@@ -33,6 +35,7 @@ export default function Employees() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  const [showHelp, setShowHelp] = useHelpState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isEdit, setIsEdit] = useState(false);
@@ -417,6 +420,7 @@ export default function Employees() {
           </div>
         </div>
       )}
+      {showHelp && <EmployeesHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
