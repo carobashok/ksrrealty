@@ -1,6 +1,6 @@
 // src/pages/BookingDetail.jsx
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
@@ -36,6 +36,9 @@ const STATUS_LABELS = {
 export default function BookingDetail() {
   const { bookingId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const returnTo = searchParams.get('returnTo');
   const queryClient = useQueryClient();
 
   const [showAddPayment, setShowAddPayment] = useState(false);
@@ -536,10 +539,10 @@ export default function BookingDetail() {
     <div className="p-6 max-w-4xl">
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={() => navigate('/bookings')}
+          onClick={() => navigate(returnTo || '/bookings')}
           className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
-          <ArrowLeft size={16} /> Back to Bookings
+          <ArrowLeft size={16} /> {returnTo ? 'Back to Inventory' : 'Back to Bookings'}
         </button>
         <button
           onClick={() => navigate(`/bookings/${bookingId}/quotation`)}

@@ -3,9 +3,11 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 import BlockPlotModal from '../components/BlockPlotModal'
 import ReleaseBlockModal from '../components/ReleaseBlockModal'
+
+const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN')
 
 const SC = { available:'#9ACD7A', blocked:'#E8A838', booked:'#4A7EB5', registered:'#1B2A4A' }
 const SL = { available:'Available', blocked:'Blocked', booked:'Booked', registered:'Registered' }
@@ -36,6 +38,30 @@ export default function PlotInventory() {
   const [sel, setSel] = useState(null)
   const [showBlock, setShowBlock] = useState(false)
   const [showRelease, setShowRelease] = useState(false)
+
+  // Fetch booking details when a booked/registered plot is selected
+  const needsBooking = sel && (sel.status === 'booked' || sel.status === 'registered')
+  const { data: bookingDetail, isLoading: bookingLoading } = useQuery({
+    queryKey: ['plot-booking', sel?.id],
+    enabled: !!needsBooking,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select(`
+          id,
+          booking_date,
+          customers ( name, mobile ),
+          plots ( total_price ),
+          payments ( amount, paid_by )
+        `)
+        .eq('plot_id', sel.id)
+        .in('status', ['booked', 'registered'])
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -226,44 +252,114 @@ export default function PlotInventory() {
       })()}
 
       {/* Selected plot panel */}
-      {sel && (
-        <div style={{background:'#EAF1FA',border:'1px solid #b8cde8',borderRadius:'8px',padding:'14px',marginTop:'14px'}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}>
-            <strong style={{color:'#1B2A4A'}}>Plot {sel.plot_number}</strong>
-            <button onClick={()=>setSel(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8',fontSize:'18px'}}>×</button>
-          </div>
-          <span style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,color:'white',background:SC[sel.status],marginBottom:'8px'}}>
-            {SL[sel.status]}
-          </span>
-          {sel.area_sqft && <div style={{fontSize:'13px',color:'#475569',marginBottom:'10px'}}>Area: {sel.area_sqft} sq.ft</div>}
-          <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
-            {sel.status === 'available' && (
-              <>
-                <button onClick={() => setShowBlock(true)}
-                  style={{padding:'7px 16px',background:'#E8A838',color:'white',border:'none',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-                  Block this plot
-                </button>
-                <button onClick={() => navigate(`/bookings/new?plotId=${sel.id}&projectId=${projectId}`)}
-                  style={{padding:'7px 16px',background:'#1B2A4A',color:'white',border:'none',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-                  Book this plot →
-                </button>
-              </>
+      {sel && (() => {
+        const paid = bookingDetail
+          ? (bookingDetail.payments || [])
+              .filter(p => p.paid_by === 'plot_purchaser')
+              .reduce((s, p) => s + Number(p.amount), 0)
+          : 0
+        const totalPrice = Number(bookingDetail?.plots?.total_price || sel.total_price || 0)
+        const pending = Math.max(0, totalPrice - paid)
+
+        return (
+          <div style={{background:'#EAF1FA',border:'1px solid #b8cde8',borderRadius:'10px',padding:'16px',marginTop:'14px'}}>
+            {/* Header */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+              <div>
+                <strong style={{color:'#1B2A4A',fontSize:'15px'}}>Plot {sel.plot_number}</strong>
+                {sel.area_sqft && <span style={{color:'#64748b',fontSize:'12px',marginLeft:'8px'}}>{sel.area_sqft} sq.ft</span>}
+              </div>
+              <button onClick={()=>setSel(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8',fontSize:'20px',lineHeight:1}}>×</button>
+            </div>
+
+            {/* Status badge */}
+            <span style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,color:'white',background:SC[sel.status],marginBottom:'12px'}}>
+              {SL[sel.status]}
+            </span>
+
+            {/* Booking details for booked/registered */}
+            {needsBooking && (
+              bookingLoading ? (
+                <div style={{fontSize:'12px',color:'#94a3b8',marginBottom:'12px'}}>Loading booking details...</div>
+              ) : bookingDetail ? (
+                <div style={{marginBottom:'14px'}}>
+                  {/* Customer */}
+                  <div style={{background:'white',borderRadius:'8px',padding:'12px',marginBottom:'10px'}}>
+                    <div style={{fontSize:'11px',color:'#94a3b8',fontWeight:600,marginBottom:'6px',letterSpacing:'0.05em'}}>CUSTOMER</div>
+                    <div style={{fontSize:'14px',fontWeight:700,color:'#1B2A4A'}}>{bookingDetail.customers?.name}</div>
+                    <div style={{fontSize:'12px',color:'#64748b',marginTop:'2px'}}>{bookingDetail.customers?.mobile}</div>
+                    <div style={{fontSize:'11px',color:'#94a3b8',marginTop:'4px'}}>
+                      Booked: {new Date(bookingDetail.booking_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                    </div>
+                  </div>
+
+                  {/* Financials */}
+                  <div style={{background:'white',borderRadius:'8px',padding:'12px'}}>
+                    <div style={{fontSize:'11px',color:'#94a3b8',fontWeight:600,marginBottom:'8px',letterSpacing:'0.05em'}}>PAYMENT SUMMARY</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',textAlign:'center'}}>
+                      <div>
+                        <div style={{fontSize:'11px',color:'#64748b',marginBottom:'2px'}}>Plot Price</div>
+                        <div style={{fontSize:'13px',fontWeight:700,color:'#1B2A4A'}}>{inr(totalPrice)}</div>
+                      </div>
+                      <div>
+                        <div style={{fontSize:'11px',color:'#64748b',marginBottom:'2px'}}>Paid</div>
+                        <div style={{fontSize:'13px',fontWeight:700,color:'#16a34a'}}>{inr(paid)}</div>
+                      </div>
+                      <div>
+                        <div style={{fontSize:'11px',color:'#64748b',marginBottom:'2px'}}>Pending</div>
+                        <div style={{fontSize:'13px',fontWeight:700,color: pending > 0 ? '#ef4444' : '#16a34a'}}>{inr(pending)}</div>
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{marginTop:'10px',background:'#e2e8f0',borderRadius:'4px',height:'5px',overflow:'hidden'}}>
+                      <div style={{
+                        width: totalPrice > 0 ? `${Math.min(100,(paid/totalPrice)*100)}%` : '0%',
+                        background: pending > 0 ? '#4A7EB5' : '#16a34a',
+                        height:'100%',borderRadius:'4px',transition:'width 0.3s'
+                      }}/>
+                    </div>
+                  </div>
+                </div>
+              ) : null
             )}
-            {sel.status === 'blocked' && (
-              <>
-                <button onClick={() => setShowRelease(true)}
-                  style={{padding:'7px 16px',background:'white',color:'#ef4444',border:'1px solid #ef4444',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-                  Release block
+
+            {/* Actions */}
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+              {sel.status === 'available' && (
+                <>
+                  <button onClick={() => setShowBlock(true)}
+                    style={{padding:'7px 16px',background:'#E8A838',color:'white',border:'none',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+                    Block this plot
+                  </button>
+                  <button onClick={() => navigate(`/bookings/new?plotId=${sel.id}&projectId=${projectId}`)}
+                    style={{padding:'7px 16px',background:'#1B2A4A',color:'white',border:'none',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+                    Book this plot →
+                  </button>
+                </>
+              )}
+              {sel.status === 'blocked' && (
+                <>
+                  <button onClick={() => setShowRelease(true)}
+                    style={{padding:'7px 16px',background:'white',color:'#ef4444',border:'1px solid #ef4444',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+                    Release block
+                  </button>
+                  <button onClick={() => navigate(`/bookings/new?plotId=${sel.id}&projectId=${projectId}`)}
+                    style={{padding:'7px 16px',background:'#1B2A4A',color:'white',border:'none',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+                    Convert to booking →
+                  </button>
+                </>
+              )}
+              {(sel.status === 'booked' || sel.status === 'registered') && bookingDetail && (
+                <button
+                  onClick={() => navigate(`/bookings/${bookingDetail.id}?returnTo=/projects/${projectId}/inventory`)}
+                  style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 16px',background:'#1B2A4A',color:'white',border:'none',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+                  <ExternalLink size={13}/> View Booking
                 </button>
-                <button onClick={() => navigate(`/bookings/new?plotId=${sel.id}&projectId=${projectId}`)}
-                  style={{padding:'7px 16px',background:'#1B2A4A',color:'white',border:'none',borderRadius:'7px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-                  Convert to booking →
-                </button>
-              </>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {showBlock && sel && (
         <BlockPlotModal plot={sel} onClose={() => { setShowBlock(false); setSel(null) }} />
