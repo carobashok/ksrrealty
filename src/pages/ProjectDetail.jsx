@@ -1221,7 +1221,7 @@ function DocumentsPanelCollapsible({ projectId }) {
       </button>
       {open && (
         <div style={{borderTop:'1px solid #f1f5f9'}}>
-          <DocumentsPanelCollapsible projectId={projectId} />
+          <DocumentsPanel projectId={projectId} />
         </div>
       )}
     </div>
