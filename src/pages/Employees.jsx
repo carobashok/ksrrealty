@@ -164,13 +164,22 @@ export default function Employees() {
             {employees.filter((e) => e.active !== false).length} active · {employees.length} total
           </p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 bg-[#0a1f44] text-white px-4 py-2 rounded-lg hover:bg-[#122a5c] transition"
-        >
-          <Plus size={18} />
-          New Employee
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHelp(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition text-sm"
+          >
+            <HelpCircle size={16} />
+            Help
+          </button>
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-2 bg-[#0a1f44] text-white px-4 py-2 rounded-lg hover:bg-[#122a5c] transition"
+          >
+            <Plus size={18} />
+            New Employee
+          </button>
+        </div>
       </div>
 
       {/* Search + Filter */}
