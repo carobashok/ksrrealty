@@ -10,6 +10,26 @@ import ReleaseBlockModal from '../components/ReleaseBlockModal'
 const SC = { available:'#9ACD7A', blocked:'#E8A838', booked:'#4A7EB5', registered:'#1B2A4A' }
 const SL = { available:'Available', blocked:'Blocked', booked:'Booked', registered:'Registered' }
 
+// Road definitions — computed from plot edges
+const ROADS = [
+  {
+    key: 'main',
+    label: "21' Wide Road",
+    angle: 13.37,
+    polygon: [[460.11,273.75],[1951.02,628.1],[1927.99,725.01],[437.08,370.66]],
+    labelX: 1194.0,
+    labelY: 499.4,
+  },
+  {
+    key: 'side',
+    label: 'Existing Road',
+    angle: 13.37,
+    polygon: [[61.14,32.65],[199.59,65.56],[149.05,278.23],[10.6,245.32]],
+    labelX: 105.1,
+    labelY: 155.4,
+  },
+]
+
 export default function PlotInventory() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -44,7 +64,6 @@ export default function PlotInventory() {
   plots?.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++ })
   const hasGeometry = plots?.some(p => Array.isArray(p.polygon_coords) && p.polygon_coords.length)
 
-  // Compute tight bounding box across all plots with geometry
   const getBounds = () => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     plots?.forEach(p => {
@@ -54,14 +73,15 @@ export default function PlotInventory() {
         if (y < minY) minY = y; if (y > maxY) maxY = y
       })
     })
+    ROADS.forEach(r => {
+      r.polygon.forEach(([x, y]) => {
+        if (x < minX) minX = x; if (x > maxX) maxX = x
+        if (y < minY) minY = y; if (y > maxY) maxY = y
+      })
+    })
     if (!isFinite(minX)) return null
     const pad = 30
-    return {
-      x: minX - pad,
-      y: minY - pad,
-      w: (maxX - minX) + pad * 2,
-      h: (maxY - minY) + pad * 2,
-    }
+    return { x: minX - pad, y: minY - pad, w: (maxX - minX) + pad*2, h: (maxY - minY) + pad*2 }
   }
 
   return (
@@ -74,13 +94,17 @@ export default function PlotInventory() {
       </div>
 
       {/* Legend */}
-      <div style={{display:'flex',gap:'14px',marginBottom:'12px',fontSize:'12px'}}>
+      <div style={{display:'flex',gap:'14px',marginBottom:'12px',fontSize:'12px',flexWrap:'wrap'}}>
         {Object.entries(SL).map(([s,l]) => (
           <span key={s} style={{display:'flex',alignItems:'center',gap:'5px'}}>
             <span style={{width:'11px',height:'11px',borderRadius:'2px',background:SC[s],display:'inline-block'}}/>
             {l}
           </span>
         ))}
+        <span style={{display:'flex',alignItems:'center',gap:'5px'}}>
+          <span style={{width:'11px',height:'11px',borderRadius:'2px',background:'#94a3b8',display:'inline-block'}}/>
+          Road
+        </span>
       </div>
 
       {/* Stats */}
@@ -101,30 +125,74 @@ export default function PlotInventory() {
       ) : (() => {
         const bounds = getBounds()
         if (!bounds) return null
-        // Scale font relative to layout width — readable at any size
         const fontSize = Math.max(6, Math.min(18, bounds.w / 55))
+        const roadFontSize = Math.max(5, fontSize * 0.85)
 
         return (
           <div style={{
-            background:'white',
+            background:'#f1f5f9',
             border:'1px solid #e2e8f0',
             borderRadius:'10px',
             padding:'12px',
-            // Let the SVG breathe — no overflow:auto, no fixed height
           }}>
             <svg
               viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
               width="100%"
-              style={{ display:'block', maxHeight:'65vh' }}
+              style={{display:'block', maxHeight:'68vh'}}
               preserveAspectRatio="xMidYMid meet"
               xmlns="http://www.w3.org/2000/svg"
             >
+              {/* Roads rendered first — plots sit on top */}
+              {ROADS.map(road => {
+                const pts = road.polygon.map(c => `${c[0]},${c[1]}`).join(' ')
+                // Dashed centre line: midpoint between TL↔BL and TR↔BR
+                const tl = road.polygon[0], tr = road.polygon[1]
+                const br = road.polygon[2], bl = road.polygon[3]
+                const ml = [(tl[0]+bl[0])/2, (tl[1]+bl[1])/2]
+                const mr = [(tr[0]+br[0])/2, (tr[1]+br[1])/2]
+
+                return (
+                  <g key={road.key}>
+                    {/* Road surface */}
+                    <polygon
+                      points={pts}
+                      fill="#94a3b8"
+                      stroke="#64748b"
+                      strokeWidth={fontSize * 0.08}
+                    />
+                    {/* Dashed centre line */}
+                    <line
+                      x1={ml[0]} y1={ml[1]}
+                      x2={mr[0]} y2={mr[1]}
+                      stroke="white"
+                      strokeWidth={fontSize * 0.18}
+                      strokeDasharray={`${fontSize*2.5} ${fontSize*1.5}`}
+                    />
+                    {/* Road label */}
+                    <text
+                      x={road.labelX}
+                      y={road.labelY}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={roadFontSize}
+                      fontWeight="700"
+                      fill="white"
+                      transform={`rotate(${road.angle}, ${road.labelX}, ${road.labelY})`}
+                      pointerEvents="none"
+                    >
+                      {road.label}
+                    </text>
+                  </g>
+                )
+              })}
+
+              {/* Plots */}
               {plots.map(p => {
                 const coords = p.polygon_coords
                 if (!Array.isArray(coords) || !coords.length) return null
                 const pts = coords.map(c => `${c[0]},${c[1]}`).join(' ')
-                const cx = coords.reduce((s,c) => s + c[0], 0) / coords.length
-                const cy = coords.reduce((s,c) => s + c[1], 0) / coords.length
+                const cx = coords.reduce((s,c) => s+c[0], 0) / coords.length
+                const cy = coords.reduce((s,c) => s+c[1], 0) / coords.length
                 const fill = SC[p.status] || SC.available
                 const isSelected = sel?.id === p.id
                 const labelColor = (p.status === 'registered' || p.status === 'booked') ? '#fff' : '#1B2A4A'
@@ -144,6 +212,7 @@ export default function PlotInventory() {
                       fontSize={fontSize}
                       fontWeight="700"
                       fill={labelColor}
+                      transform={`rotate(${13.37}, ${cx}, ${cy})`}
                       pointerEvents="none"
                     >
                       {p.plot_number}
