@@ -22,11 +22,12 @@ import ReceiptView from './pages/ReceiptView'
 import Settings from './pages/Settings'
 import Cancellations from './pages/Cancellations'
 import Documents from './pages/Documents'
+import ExcessPayments from './pages/ExcessPayments'
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60,      // 1 minute
+      staleTime: 1000 * 60,
       retry: 1,
       refetchOnWindowFocus: false,
     },
@@ -38,7 +39,6 @@ function ProtectedRoute({ children }) {
   const location = useLocation()
 
   if (session === undefined) {
-    // Still checking whether a session exists — avoid a flash redirect to /login
     return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>
   }
   if (session === null) {
@@ -79,8 +79,9 @@ export default function App() {
               <Route path="employees"                  element={<Employees />} />
               <Route path="channel-partners"           element={<ChannelPartners />} />
               <Route path="settings"                   element={<Settings />} />
-              <Route path="cancellations"               element={<Cancellations />} />
+              <Route path="cancellations"              element={<Cancellations />} />
               <Route path="documents"                  element={<Documents />} />
+              <Route path="excess-payments"            element={<ExcessPayments />} />
             </Route>
           </Routes>
         </AuthProvider>

@@ -4,13 +4,14 @@ import { supabase } from '../lib/supabase'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Users, FileText,
-  CreditCard, UserCog, ChevronRight, ChevronDown, Map, Settings, LogOut, Handshake, FolderCog, XCircle, ArrowDownLeft, FolderOpen
+  CreditCard, UserCog, ChevronRight, ChevronDown, Settings, LogOut,
+  Handshake, FolderCog, XCircle, ArrowDownLeft, FolderOpen, AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 
 const nav = [
-  { to: '/dashboard',  label: 'Dashboard',       icon: LayoutDashboard },
-  { to: '/projects',   label: 'Projects',         icon: Building2 },
+  { to: '/dashboard',       label: 'Dashboard',       icon: LayoutDashboard },
+  { to: '/projects',        label: 'Projects',         icon: Building2 },
   {
     group: 'master',
     label: 'Master',
@@ -21,12 +22,13 @@ const nav = [
       { to: '/channel-partners', label: 'Channel Partners', icon: Handshake },
     ],
   },
-  { to: '/bookings',   label: 'Bookings',         icon: FileText },
-  { to: '/documents',     label: 'Documents',        icon: FolderOpen },
-  { to: '/receipts',      label: 'Receipts',         icon: ArrowDownLeft },
-  { to: '/payments',       label: 'Payments',         icon: CreditCard },
-  { to: '/cancellations',  label: 'Cancellations',    icon: XCircle },
-  { to: '/settings',   label: 'Settings',          icon: Settings },
+  { to: '/bookings',        label: 'Bookings',         icon: FileText },
+  { to: '/documents',       label: 'Documents',        icon: FolderOpen },
+  { to: '/receipts',        label: 'Receipts',         icon: ArrowDownLeft },
+  { to: '/payments',        label: 'Payments',         icon: CreditCard },
+  { to: '/cancellations',   label: 'Cancellations',    icon: XCircle },
+  { to: '/excess-payments', label: 'Excess Payments',  icon: AlertTriangle },
+  { to: '/settings',        label: 'Settings',         icon: Settings },
 ]
 
 export default function Layout() {
@@ -78,7 +80,7 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-4 space-y-0.5 px-2">
+        <nav className="flex-1 py-4 space-y-0.5 px-2 overflow-y-auto">
           {nav.map((item) => {
             if (item.group) {
               const GroupIcon = item.icon
