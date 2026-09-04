@@ -5,12 +5,13 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Users, FileText,
   CreditCard, UserCog, ChevronRight, ChevronDown, Settings, LogOut,
-  Handshake, FolderCog, XCircle, ArrowDownLeft, FolderOpen, AlertTriangle
+  Handshake, FolderCog, XCircle, ArrowDownLeft, FolderOpen, AlertTriangle, Map
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 
 const nav = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/dashboard',    label: 'Dashboard',   icon: LayoutDashboard },
+  { to: '/project-map',  label: 'Project Map',  icon: Map },
   {
     group: 'master',
     label: 'Master',

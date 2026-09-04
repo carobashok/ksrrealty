@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Map, Pencil, X, Check, Plus, Trash2 } from 'lucide-react'
@@ -60,8 +60,6 @@ function RatesSection({ proj, projectId, qc }) {
     incentive_amount_per_plot: proj.incentive_amount_per_plot || '',
     reg_charge_pct: proj.reg_charge_pct ?? 9,
     document_charge_amount: proj.document_charge_amount || '',
-    latitude:  proj.latitude  || '',
-    longitude: proj.longitude || '',
   })
 
   const set = (k, v) => setForm(f => {
@@ -84,8 +82,6 @@ function RatesSection({ proj, projectId, qc }) {
         incentive_amount_per_plot: form.incentive_amount_per_plot ? parseFloat(form.incentive_amount_per_plot) : null,
         reg_charge_pct: form.reg_charge_pct ? parseFloat(form.reg_charge_pct) : null,
         document_charge_amount: form.document_charge_amount ? parseFloat(form.document_charge_amount) : null,
-        latitude:  form.latitude  ? parseFloat(form.latitude)  : null,
-        longitude: form.longitude ? parseFloat(form.longitude) : null,
       }).eq('id', projectId)
       if (error) throw error
     },
@@ -141,42 +137,6 @@ function RatesSection({ proj, projectId, qc }) {
             <input style={inp} type="number" value={form.document_charge_amount} onChange={e=>set('document_charge_amount',e.target.value)} />
           </div>
           <p style={{fontSize:'11px',color:'#94a3b8',margin:0}}>Reg Charge is calculated on GLV Total (not Land Cost); Document Charge is flat. Both are added on top of Land Cost to arrive at the quotation total, and are uniform across every plot in this project.</p>
-          {/* Location coordinates */}
-          <div style={{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #f1f5f9'}}>
-            <div style={{fontSize:'11px',fontWeight:600,color:'#94a3b8',marginBottom:'6px',letterSpacing:'0.05em'}}>MAP LOCATION</div>
-            {editing ? (
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
-                {[['Latitude','latitude'],['Longitude','longitude']].map(([label,key])=>(
-                  <div key={key}>
-                    <div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>{label}</div>
-                    <input style={inp} type="number" step="0.0000001"
-                      value={form[key]}
-                      onChange={e=>set(key,e.target.value)}
-                      placeholder={key==='latitude' ? '11.0168' : '76.9558'}
-                    />
-                  </div>
-                ))}
-                <div style={{gridColumn:'1/-1',fontSize:'11px',color:'#94a3b8'}}>
-                  💡 Right-click the project site on Google Maps → "What's here?" to get coordinates.
-                </div>
-              </div>
-            ) : (
-              proj.latitude && proj.longitude ? (
-                <div style={{fontSize:'13px',color:'#475569'}}>
-                  📍 {proj.latitude}, {proj.longitude}
-                  <a href={`https://www.google.com/maps?q=${proj.latitude},${proj.longitude}`}
-                    target="_blank" rel="noreferrer"
-                    style={{marginLeft:'8px',fontSize:'12px',color:'#4A7EB5'}}>
-                    View on Google Maps ↗
-                  </a>
-                </div>
-              ) : (
-                <div style={{fontSize:'12px',color:'#94a3b8'}}>
-                  No coordinates set — click Edit Rates to add location for the map view.
-                </div>
-              )
-            )}
-          </div>
           <p style={{fontSize:'11px',color:'#94a3b8',margin:0}}>Flat incentive pool per plot, split among employees at booking time (same amount for every plot in this project)</p>
           <p style={{fontSize:'11px',color:'#94a3b8',margin:0}}>Cent ↔ Sq.ft values auto-calculate (1 Cent = 435.6 Sq.ft)</p>
         </div>
@@ -1242,11 +1202,34 @@ function PlotsSection({ proj, projectId }) {
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────
+// ── Documents Panel (collapsible) ──────────────────────────────────────────
+function DocumentsPanelCollapsible({ projectId }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{background:'white',borderRadius:'10px',border:'1px solid #e2e8f0',marginBottom:'16px'}}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',
+          padding:'14px 20px',background:'none',border:'none',cursor:'pointer',
+        }}
+      >
+        <div style={{fontSize:'14px',fontWeight:700,color:'#1B2A4A'}}>Documents</div>
+        <span style={{fontSize:'12px',color:'#64748b',fontWeight:500}}>
+          {open ? '▲ Collapse' : '▼ Expand'}
+        </span>
+      </button>
+      {open && (
+        <div style={{borderTop:'1px solid #f1f5f9'}}>
+          <DocumentsPanel projectId={projectId} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProjectDetail() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const returnTo = new URLSearchParams(location.search).get('returnTo')
   const qc = useQueryClient()
 
   const { data: proj, isLoading } = useQuery({
@@ -1296,12 +1279,7 @@ export default function ProjectDetail() {
 
       {/* Header */}
       <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'20px'}}>
-        <button
-            onClick={() => navigate(returnTo || '/projects')}
-            style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex',padding:0}}
-          >
-            <ArrowLeft size={18}/>
-          </button>
+        <Link to="/projects" style={{color:'#94a3b8',display:'flex'}}><ArrowLeft size={18}/></Link>
         <div style={{flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
             <h1 style={{fontSize:'20px',fontWeight:700,color:'#1B2A4A',margin:0}}>{proj.name}</h1>
@@ -1344,7 +1322,7 @@ export default function ProjectDetail() {
       <RatesSection   proj={proj} projectId={projectId} qc={qc} />
       <AssignedEmployeesSection projectId={projectId} qc={qc} />
       <AssignedChannelPartnersSection projectId={projectId} qc={qc} />
-      <DocumentsPanel projectId={projectId} />
+      <DocumentsPanelCollapsible projectId={projectId} />
       <LandownersSection proj={proj} projectId={projectId} qc={qc} />
       <PLCSection proj={proj} projectId={projectId} qc={qc} />
       <PlotsSection proj={proj} projectId={projectId} />

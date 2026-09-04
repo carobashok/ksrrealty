@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Map, Pencil, X, Check, Plus, Trash2 } from 'lucide-react'
@@ -1244,9 +1244,6 @@ function PlotsSection({ proj, projectId }) {
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function ProjectDetail() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const returnTo = new URLSearchParams(location.search).get('returnTo')
   const qc = useQueryClient()
 
   const { data: proj, isLoading } = useQuery({
@@ -1296,12 +1293,7 @@ export default function ProjectDetail() {
 
       {/* Header */}
       <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'20px'}}>
-        <button
-            onClick={() => navigate(returnTo || '/projects')}
-            style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex',padding:0}}
-          >
-            <ArrowLeft size={18}/>
-          </button>
+        <Link to="/projects" style={{color:'#94a3b8',display:'flex'}}><ArrowLeft size={18}/></Link>
         <div style={{flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
             <h1 style={{fontSize:'20px',fontWeight:700,color:'#1B2A4A',margin:0}}>{proj.name}</h1>

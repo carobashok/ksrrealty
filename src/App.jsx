@@ -23,6 +23,7 @@ import Settings from './pages/Settings'
 import Cancellations from './pages/Cancellations'
 import Documents from './pages/Documents'
 import ExcessPayments from './pages/ExcessPayments'
+import ProjectMap from './pages/ProjectMap'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,6 +83,7 @@ export default function App() {
               <Route path="cancellations"              element={<Cancellations />} />
               <Route path="documents"                  element={<Documents />} />
               <Route path="excess-payments"            element={<ExcessPayments />} />
+              <Route path="project-map"               element={<ProjectMap />} />
             </Route>
           </Routes>
         </AuthProvider>
