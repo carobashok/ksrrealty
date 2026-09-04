@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { Upload, FolderOpen, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, FolderOpen, CheckCircle, AlertCircle, HelpCircle } from 'lucide-react';
+import SettingsHelp from '../components/help/SettingsHelp';
 import { useEffect as useEffectDrive, useCallback } from 'react';
 import { getGoogleAuthUrl, exchangeCodeForTokens } from '../lib/googleDrive';
 
@@ -23,6 +24,7 @@ export default function Settings() {
     excess_ignore_threshold: 500,
   });
   const [uploading, setUploading] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [connectingDrive, setConnectingDrive] = useState(false);
 
   // Handle Google OAuth callback
@@ -124,7 +126,16 @@ export default function Settings() {
 
   return (
     <div className="p-6 max-w-lg">
-      <h1 className="text-2xl font-semibold text-slate-800 mb-1">Settings</h1>
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-2xl font-semibold text-slate-800">Settings</h1>
+        <button
+          onClick={() => setShowHelp(true)}
+          className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition text-sm"
+        >
+          <HelpCircle size={16} />
+          Help
+        </button>
+      </div>
       <p className="text-sm text-slate-500 mb-6">
         Company details, bank account, and system configuration.
       </p>
@@ -303,6 +314,7 @@ export default function Settings() {
           </div>
         )}
       </div>
+      {showHelp && <SettingsHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
-import { Search, Plus, Pencil, Trash2, X, Phone, Mail } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, X, Phone, Mail, HelpCircle } from 'lucide-react';
+import ChannelPartnersHelp from '../components/help/ChannelPartnersHelp';
 
 const emptyForm = {
   id: null,
@@ -18,6 +19,7 @@ const emptyForm = {
 export default function ChannelPartners() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -140,13 +142,22 @@ export default function ChannelPartners() {
             {partners.filter((p) => p.active !== false).length} active · {partners.length} total
           </p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 bg-[#0a1f44] text-white px-4 py-2 rounded-lg hover:bg-[#122a5c] transition"
-        >
-          <Plus size={18} />
-          New Channel Partner
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHelp(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition text-sm"
+          >
+            <HelpCircle size={16} />
+            Help
+          </button>
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-2 bg-[#0a1f44] text-white px-4 py-2 rounded-lg hover:bg-[#122a5c] transition"
+          >
+            <Plus size={18} />
+            New Channel Partner
+          </button>
+        </div>
       </div>
 
       {/* Search + Filter */}
@@ -369,6 +380,7 @@ export default function ChannelPartners() {
           </div>
         </div>
       )}
+      {showHelp && <ChannelPartnersHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
