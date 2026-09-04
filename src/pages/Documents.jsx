@@ -5,7 +5,8 @@ import { supabase } from '../lib/supabase';
 import { getValidAccessToken, ensureProjectFolder } from '../lib/googleDrive';
 import { uploadFileToDriveDirect } from '../lib/googleDriveDirectUpload';
 import toast from 'react-hot-toast';
-import { Upload, ExternalLink, Trash2, FileText, FolderOpen, RefreshCw, Search } from 'lucide-react';
+import { Upload, ExternalLink, Trash2, FileText, FolderOpen, RefreshCw, Search, HelpCircle } from 'lucide-react';
+import DocumentsHelp from '../components/help/DocumentsHelp';
 
 const SETTINGS_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -19,6 +20,7 @@ export default function Documents() {
   const [uploading, setUploading] = useState(false);
   const [uploadingProjectId, setUploadingProjectId] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [importingProjectId, setImportingProjectId] = useState(null);
 
   // Fetch settings for Drive tokens
@@ -197,11 +199,20 @@ export default function Documents() {
           <h1 className="text-2xl font-semibold text-slate-800">Documents</h1>
           <p className="text-sm text-slate-500">{filtered.length} document{filtered.length !== 1 ? 's' : ''}</p>
         </div>
-        {!isDriveConnected && (
-          <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
-            Google Drive not connected — go to Settings
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHelp(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition text-sm"
+          >
+            <HelpCircle size={16} />
+            Help
+          </button>
+          {!isDriveConnected && (
+            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
+              Google Drive not connected — go to Settings
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -323,6 +334,7 @@ export default function Documents() {
           </table>
         )}
       </div>
+      {showHelp && <DocumentsHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
