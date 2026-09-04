@@ -2,9 +2,11 @@
 // Interactive map showing all KSR project locations using Leaflet + OpenStreetMap
 // No API key required
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { HelpCircle } from 'lucide-react'
+import ProjectMapHelp from '../components/help/ProjectMapHelp'
 import { supabase } from '../lib/supabase'
 
 const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN')
@@ -19,6 +21,7 @@ const STATUS_COLORS = {
 
 export default function ProjectMap() {
   const navigate = useNavigate()
+  const [showHelp, setShowHelp] = useState(false)
   const mapRef    = useRef(null)
   const mapObj    = useRef(null)
   const layerRef  = useRef(null)
@@ -225,7 +228,7 @@ export default function ProjectMap() {
           </div>
         </div>
         {/* Legend */}
-        <div style={{display:'flex',gap:'14px',fontSize:'12px',alignItems:'center'}}>
+        <div style={{display:'flex',gap:'12px',fontSize:'12px',alignItems:'center'}}>
           <span style={{color:'#64748b'}}>Pin shows available count · Colour = sales progress</span>
           <div style={{display:'flex',gap:'8px'}}>
             {[['Mostly available','#9ACD7A'],['Selling','#4A7EB5'],['Mostly sold','#1B2A4A']].map(([l,c])=>(
@@ -235,6 +238,14 @@ export default function ProjectMap() {
               </span>
             ))}
           </div>
+          <button
+            onClick={() => setShowHelp(true)}
+            style={{display:'flex',alignItems:'center',gap:'6px',padding:'6px 12px',
+              background:'white',border:'1px solid #e2e8f0',borderRadius:'8px',
+              cursor:'pointer',color:'#64748b',fontSize:'12px',fontWeight:500,flexShrink:0}}
+          >
+            <HelpCircle size={14}/> Help
+          </button>
         </div>
       </div>
 
@@ -266,6 +277,7 @@ export default function ProjectMap() {
           </div>
         )}
       </div>
+      {showHelp && <ProjectMapHelp onClose={() => setShowHelp(false)} />}
     </div>
   )
 }
