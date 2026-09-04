@@ -161,31 +161,56 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
   // lines: { [bookingId]: [{id, type_key, amount, remarks}] }
   const [lines, setLines]     = useState({})
 
-  // Load all active bookings for this customer
+  // Load all active bookings for this customer — separate queries to avoid schema join issues
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['customer-active-bookings', customerId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // 1. Fetch bookings
+      const { data: bData, error: bErr } = await supabase
         .schema('ksr')
         .from('bookings')
-        .select(`
-          id, booking_date, total_price, project_id,
-          plots ( plot_number, block ),
-          projects ( id, name, is_jv )
-        `)
+        .select('id, booking_date, project_id, plot_id')
         .eq('customer_id', customerId)
         .in('status', ['booked','registered'])
         .order('booking_date')
-      if (error) throw error
+      if (bErr) throw bErr
+      if (!bData.length) return []
+
+      // 2. Fetch plots for these bookings
+      const plotIds = bData.map(b => b.plot_id).filter(Boolean)
+      const { data: plotData } = await supabase
+        .schema('ksr')
+        .from('plots')
+        .select('id, plot_number, block, total_price')
+        .in('id', plotIds)
+      const plotMap = Object.fromEntries((plotData||[]).map(p => [p.id, p]))
+
+      // 3. Fetch projects
+      const projIds = [...new Set(bData.map(b => b.project_id).filter(Boolean))]
+      const { data: projData } = await supabase
+        .schema('ksr')
+        .from('projects')
+        .select('id, name, is_jv')
+        .in('id', projIds)
+      const projMap = Object.fromEntries((projData||[]).map(p => [p.id, p]))
+
+      // 4. Merge
+      const merged = bData.map(b => ({
+        ...b,
+        plots:    plotMap[b.plot_id] || null,
+        projects: projMap[b.project_id] || null,
+        total_price: plotMap[b.plot_id]?.total_price || null,
+      }))
+
       // Init checked and lines
       const c = {}, l = {}
-      data.forEach(b => {
+      merged.forEach(b => {
         c[b.id] = true
         l[b.id] = [{ id: Date.now() + Math.random(), type_key: 'company_share', amount: '', remarks: '' }]
       })
       setChecked(c)
       setLines(l)
-      return data
+      return merged
     },
   })
 
