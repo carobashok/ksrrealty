@@ -54,22 +54,35 @@ export default function Bookings() {
     },
   });
 
-  // Live total paid per booking — sourced from the payments table itself,
-  // not a frozen snapshot, so edits/corrections in Booking Detail always
-  // reflect correctly here too.
+  // Live total paid per booking — includes both direct payments and split payments
   const { data: paidTotals = {} } = useQuery({
     queryKey: ['payments-totals-by-booking'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // 1. Direct payments (booking_id set directly on payment)
+      const { data: direct, error: e1 } = await supabase
         .schema('ksr')
         .from('payments')
         .select('booking_id, amount, paid_by')
-        .neq('paid_by', 'ksr'); // exclude KSR→Landowner settlements
-      if (error) throw error;
-      return data.reduce((acc, p) => {
-        acc[p.booking_id] = (acc[p.booking_id] || 0) + Number(p.amount);
-        return acc;
-      }, {});
+        .neq('paid_by', 'ksr')
+        .not('booking_id', 'is', null)
+      if (e1) throw e1
+
+      // 2. Split payments (booking_id stored in booking_payment_splits)
+      const { data: splits, error: e2 } = await supabase
+        .schema('ksr')
+        .from('booking_payment_splits')
+        .select('booking_id, amount')
+      if (e2) throw e2
+
+      // Merge both into totals per booking
+      const totals = {}
+      direct.forEach(p => {
+        totals[p.booking_id] = (totals[p.booking_id] || 0) + Number(p.amount)
+      })
+      splits.forEach(s => {
+        totals[s.booking_id] = (totals[s.booking_id] || 0) + Number(s.amount)
+      })
+      return totals
     },
   });
 
