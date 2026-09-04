@@ -268,39 +268,25 @@ export default function MultiBookingReceiptModal({ customerId, customerName, onC
 
     setSaving(true)
     try {
-      // Insert payment row
-      const { data: payment, error: payErr } = await supabase
+      // Single atomic RPC — if splits fail, payment is rolled back automatically
+      const { data: paymentId, error: rpcErr } = await supabase
         .schema('ksr')
-        .from('payments')
-        .insert({
-          booking_id:   null,
-          is_split:     true,
-          payment_type: 'company_share', // header level — detail in splits
-          paid_by:      'plot_purchaser',
-          payment_date: date,
-          amount:       totalAmt,
-          mode:         mode,
-          reference_no: refNo || null,
+        .rpc('insert_split_payment', {
+          p_payment: {
+            payment_date: date,
+            amount:       String(totalAmt),
+            mode:         mode,
+            reference_no: refNo || '',
+          },
+          p_splits: activeSplitLines.map(l => ({
+            booking_id:   l.booking_id,
+            payment_type: l.payment_type,
+            landowner_id: l.landowner_id || '',
+            amount:       String(l.amount),
+            remarks:      l.remarks || '',
+          })),
         })
-        .select('id')
-        .single()
-      if (payErr) throw payErr
-
-      // Insert split rows
-      const splitRows = activeSplitLines.map(l => ({
-        payment_id:   payment.id,
-        booking_id:   l.booking_id,
-        payment_type: l.payment_type,
-        landowner_id: l.landowner_id,
-        amount:       l.amount,
-        remarks:      l.remarks,
-      }))
-
-      const { error: splitErr } = await supabase
-        .schema('ksr')
-        .from('booking_payment_splits')
-        .insert(splitRows)
-      if (splitErr) throw splitErr
+      if (rpcErr) throw rpcErr
 
       toast.success('Receipt saved')
       qc.invalidateQueries(['all-receipts'])

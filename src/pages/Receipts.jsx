@@ -213,8 +213,8 @@ export default function Receipts() {
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <SummaryCard label="Total Collected" value={inr(totalCollected)} />
-        <SummaryCard label="Single-plot Receipts" value={filtered.filter(p=>!p.is_split).length} isCount />
-        <SummaryCard label="Multi-plot Receipts" value={filtered.filter(p=>p.is_split).length} isCount />
+        <SummaryCard label="Single-plot Receipts" value={payments.filter(p=>!p.is_split).length} isCount />
+        <SummaryCard label="Multi-plot Receipts" value={payments.filter(p=>p.is_split).length} isCount />
       </div>
 
       {/* Filters */}
