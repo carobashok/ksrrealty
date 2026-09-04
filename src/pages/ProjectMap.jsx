@@ -89,7 +89,8 @@ export default function ProjectMap() {
           if (!mapObj.current && mapRef.current) {
             const L = window.L
             // Default centre: Coimbatore area (adjust if projects are elsewhere)
-            const map = L.map(mapRef.current, { zoomControl: true }).setView([11.0168, 76.9558], 11)
+            // Default view: Tamil Nadu — will auto-fit to project pins once they load
+            const map = L.map(mapRef.current, { zoomControl: true }).setView([11.1271, 78.6569], 7)
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
               attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
               maxZoom: 19,
@@ -196,13 +197,16 @@ export default function ProjectMap() {
     mapObj.current.addLayer(cluster)
     layerRef.current = cluster
 
-    // Fit map to all project locations
-    if (bounds.length > 0) {
-      if (bounds.length === 1) {
-        mapObj.current.setView(bounds[0], 14)
-      } else {
-        mapObj.current.fitBounds(bounds, { padding: [40, 40] })
-      }
+    // Auto-fit map to all project locations on every load
+    if (bounds.length === 0) {
+      // No coordinates set — show Tamil Nadu overview
+      mapObj.current.setView([11.1271, 78.6569], 7)
+    } else if (bounds.length === 1) {
+      // Single project — zoom to street level
+      mapObj.current.setView(bounds[0], 14)
+    } else {
+      // Multiple projects — fit all pins with padding
+      mapObj.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 })
     }
 
     // Bridge for popup button → React navigate
