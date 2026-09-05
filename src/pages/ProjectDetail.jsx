@@ -1051,6 +1051,12 @@ function PlotsSection({ proj, projectId }) {
       // Defaults to 'plot' if the column is absent or blank.
       const plotType = (row.plot_type || row.type || 'plot').toLowerCase().trim()
 
+      // Facing — normalise to title case
+      const facingRaw = (row.facing || row.FACING || '').trim()
+      const facing = facingRaw
+        ? facingRaw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+        : null
+
       const { error } = await supabase.from('plots').insert({
         project_id:     projectId,
         plot_number:    plotNumber,
@@ -1063,6 +1069,7 @@ function PlotsSection({ proj, projectId }) {
         base_price_sqft: plotType === 'plot' ? basePriceSqft : null,
         rate_per_cent:  (plotType === 'plot' && isCents) ? (proj.sale_rate_per_cent || null) : null,
         total_price:    plotType === 'plot' ? totalPrice : null,
+        facing:         facing,
       })
       if (!error) imported++; else { console.error(error); skipped++ }
     }
