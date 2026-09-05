@@ -331,20 +331,37 @@ export default function ExcessPayments() {
           .select(`
             id,
             customer_id,
+            total_consideration,
             customers ( name, mobile ),
             projects ( name ),
-            plots ( plot_number, block, total_price ),
+            plots ( plot_number, block ),
             payments ( amount, paid_by )
           `)
           .in('status', ['booked', 'registered'])
+          .neq('excess_ignored', true)
         if (e2) throw e2
+
+        // Also fetch split payments
+        const bookingIds = d2.map(b => b.id)
+        const { data: splits } = await supabase
+          .schema('ksr')
+          .from('booking_payment_splits')
+          .select('booking_id, amount')
+          .in('booking_id', bookingIds)
+
+        const splitTotals = (splits || []).reduce((acc, s) => {
+          acc[s.booking_id] = (acc[s.booking_id] || 0) + Number(s.amount)
+          return acc
+        }, {})
 
         return d2
           .map(b => {
-            const paid = (b.payments || [])
+            const directPaid = (b.payments || [])
               .filter(p => p.paid_by === 'plot_purchaser')
               .reduce((s, p) => s + Number(p.amount), 0)
-            const excess = paid - Number(b.plots?.total_price || 0)
+            const paid = directPaid + (splitTotals[b.id] || 0)
+            const totalDue = Number(b.total_consideration || 0)
+            const excess = paid - totalDue
             return {
               booking_id:   b.id,
               customer_id:  b.customer_id,
@@ -353,7 +370,7 @@ export default function ExcessPayments() {
               project:      b.projects?.name,
               plot_number:  b.plots?.plot_number,
               block:        b.plots?.block,
-              total_price:  Number(b.plots?.total_price || 0),
+              total_price:  totalDue,
               total_paid:   paid,
               excess,
             }

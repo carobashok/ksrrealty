@@ -30,6 +30,8 @@ export default function Bookings() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [showCancelled, setShowCancelled] = useState(false);
+  const [sortCol, setSortCol] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['bookings'],
@@ -41,6 +43,7 @@ export default function Bookings() {
           `
           id,
           booking_date,
+          created_at,
           total_consideration,
           status,
           customers ( name, mobile ),
@@ -93,6 +96,20 @@ export default function Bookings() {
       maximumFractionDigits: 0,
     }).format(n || 0);
 
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir('desc')
+    }
+  }
+
+  const SortIcon = ({ col }) => {
+    if (sortCol !== col) return <span style={{color:'#cbd5e1',marginLeft:'4px'}}>↕</span>
+    return <span style={{color:'#1B2A4A',marginLeft:'4px'}}>{sortDir === 'asc' ? '↑' : '↓'}</span>
+  }
+
   const filtered = bookings.filter((b) => {
     if (b.status === 'cancelled' && !showCancelled) return false;
     const matchesStatus = statusFilter === 'All' || b.status === statusFilter;
@@ -105,6 +122,29 @@ export default function Bookings() {
       b.projects?.name?.toLowerCase().includes(q);
     return matchesStatus && matchesSearch;
   });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    switch (sortCol) {
+      case 'customer':
+        return dir * (a.customers?.name || '').localeCompare(b.customers?.name || '')
+      case 'project':
+        return dir * ((a.projects?.name || '') + (a.plots?.plot_number || '')).localeCompare(
+          (b.projects?.name || '') + (b.plots?.plot_number || ''))
+      case 'total_consideration':
+        return dir * ((a.total_consideration || 0) - (b.total_consideration || 0))
+      case 'total_paid':
+        return dir * ((paidTotals[a.id] || 0) - (paidTotals[b.id] || 0))
+      case 'status':
+        const sOrder = { registered:0, agreement_signed:1, booked:2, cancelled:3 }
+        return dir * ((sOrder[a.status] ?? 9) - (sOrder[b.status] ?? 9))
+      case 'booking_date':
+        return dir * (new Date(a.booking_date || 0) - new Date(b.booking_date || 0))
+      case 'created_at':
+      default:
+        return dir * (new Date(a.created_at || 0) - new Date(b.created_at || 0))
+    }
+  })
 
   return (
     <div className="p-6">
@@ -171,16 +211,26 @@ export default function Bookings() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
               <tr>
-                <th className="text-left px-4 py-3">Customer</th>
-                <th className="text-left px-4 py-3">Project / Plot</th>
-                <th className="text-right px-4 py-3">Total Consideration</th>
-                <th className="text-right px-4 py-3">Total Paid</th>
-                <th className="text-left px-4 py-3">Status</th>
-                <th className="text-left px-4 py-3">Booking Date</th>
+                {[
+                  { col:'customer',           label:'Customer',             align:'left'  },
+                  { col:'project',            label:'Project / Plot',       align:'left'  },
+                  { col:'total_consideration',label:'Total Consideration',  align:'right' },
+                  { col:'total_paid',         label:'Total Paid',           align:'right' },
+                  { col:'status',             label:'Status',               align:'left'  },
+                  { col:'booking_date',       label:'Booking Date',         align:'left'  },
+                  { col:'created_at',         label:'Created Date',         align:'left'  },
+                ].map(({ col, label, align }) => (
+                  <th key={col}
+                    className={`text-${align} px-4 py-3 cursor-pointer hover:bg-slate-100 select-none whitespace-nowrap`}
+                    onClick={() => handleSort(col)}
+                  >
+                    {label}<SortIcon col={col} />
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((b) => (
+              {sorted.map((b) => (
                 <tr
                   key={b.id}
                   onClick={() => navigate(`/bookings/${b.id}`)}
@@ -213,12 +263,17 @@ export default function Bookings() {
                       {statusLabel(b.status) || '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                     {b.booking_date
                       ? new Date(b.booking_date).toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
+                          day: '2-digit', month: 'short', year: 'numeric',
+                        })
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
+                    {b.created_at
+                      ? new Date(b.created_at).toLocaleDateString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
                         })
                       : '—'}
                   </td>
