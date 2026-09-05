@@ -12,7 +12,7 @@ const MODES = ['cash', 'cheque', 'neft', 'rtgs', 'upi', 'dd', 'imps']
 function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
   const qc = useQueryClient()
   const [action, setAction]       = useState(null) // 'refund' | 'adjust' | 'hold'
-  const [amount, setAmount]       = useState(String(row.excess))
+  const [amount, setAmount]       = useState(String(Math.round(row.excess * 100) / 100))
   const [mode, setMode]           = useState('cash')
   const [refNo, setRefNo]         = useState('')
   const [date, setDate]           = useState(new Date().toISOString().slice(0, 10))
@@ -42,11 +42,59 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
     },
   })
 
+  // All active bookings across all customers/projects (for Open Transfer)
+  const [bookingSearch, setBookingSearch] = useState('')
+  const { data: allBookings = [] } = useQuery({
+    queryKey: ['all-active-bookings-for-transfer'],
+    enabled: action === 'open_transfer',
+    queryFn: async () => {
+      const { data: bData, error } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('id, customer_id, plot_id, project_id')
+        .in('status', ['booked', 'registered'])
+        .neq('id', row.booking_id)
+      if (error) throw error
+
+      const plotIds = bData.map(b => b.plot_id).filter(Boolean)
+      const projIds = [...new Set(bData.map(b => b.project_id).filter(Boolean))]
+      const custIds = [...new Set(bData.map(b => b.customer_id).filter(Boolean))]
+
+      const [{ data: plots }, { data: projs }, { data: custs }] = await Promise.all([
+        supabase.schema('ksr').from('plots').select('id, plot_number, block').in('id', plotIds),
+        supabase.schema('ksr').from('projects').select('id, name').in('id', projIds),
+        supabase.schema('ksr').from('customers').select('id, name').in('id', custIds),
+      ])
+
+      const plotMap = Object.fromEntries((plots||[]).map(p => [p.id, p]))
+      const projMap = Object.fromEntries((projs||[]).map(p => [p.id, p]))
+      const custMap = Object.fromEntries((custs||[]).map(c => [c.id, c]))
+
+      return bData.map(b => ({
+        id: b.id,
+        customer: custMap[b.customer_id]?.name || '—',
+        project:  projMap[b.project_id]?.name || '—',
+        plot:     plotMap[b.plot_id]?.plot_number || '—',
+        block:    plotMap[b.plot_id]?.block || '',
+      }))
+    },
+  })
+
+  const filteredAllBookings = allBookings.filter(b => {
+    if (!bookingSearch) return true
+    const q = bookingSearch.toLowerCase()
+    return b.customer.toLowerCase().includes(q) ||
+           b.project.toLowerCase().includes(q) ||
+           b.plot.toLowerCase().includes(q)
+  })
+
   const amt = parseFloat(amount) || 0
   const valid = amt > 0 && amt <= row.excess &&
     (action === 'refund'
       ? true
       : action === 'adjust'
+      ? !!targetBooking
+      : action === 'open_transfer'
       ? !!targetBooking
       : action === 'hold'
       ? true
@@ -89,6 +137,23 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
           })
         if (error) throw error
         toast.success(`${inr(amt)} adjusted to selected plot`)
+
+      } else if (action === 'open_transfer') {
+        // Create customer_deposit for any target booking — open cross-customer/project transfer
+        if (!targetBooking) { toast.error('Select a target booking'); setSaving(false); return }
+        const { error } = await supabase
+          .schema('ksr')
+          .from('customer_deposits')
+          .insert({
+            customer_id:       row.customer_id,
+            booking_id:        targetBooking,
+            source_booking_id: row.booking_id,
+            amount:            amt,
+            notes:             notes || `Open transfer from ${row.customer} — Plot ${row.plot_number}`,
+            deposit_date:      date,
+          })
+        if (error) throw error
+        toast.success(`${inr(amt)} transferred to selected booking`)
 
       } else if (action === 'hold') {
         // Create unallocated customer_deposit (no specific booking)
@@ -162,8 +227,9 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
         <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'20px'}}>
           {[
             { key:'refund',  label:'Refund to Customer',         desc:'Return the excess amount to the customer via cash / bank transfer' },
-            { key:'adjust',  label:'Adjust to Another Plot',     desc:'Credit this amount against another booking of the same customer' },
-            { key:'hold',    label:'Hold as Customer Deposit',   desc:'Keep as unallocated credit — can be applied to a future booking' },
+            { key:"adjust", label:"Adjust to Same Customer Plot", desc:"Credit against another booking of this same customer — e.g. they bought 2 plots" },
+            { key:'open_transfer', label:'Open Transfer',                   desc:'Credit against any booking — different customer or project. Use for CP-instructed adjustments' },
+            { key:'hold',          label:'Hold as Deposit',                 desc:'Keep as unallocated credit — can be applied to a future booking' },
             ...(row.excess <= ignoreThreshold ? [
               { key:'ignore', label:'Ignore', desc:`Excess is within the threshold of ₹${Number(ignoreThreshold).toLocaleString('en-IN')} — mark as tolerated and remove from this list` }
             ] : []),
@@ -239,14 +305,14 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
               )}
             </div>
 
-            {/* Target booking — only for adjust */}
+            {/* Target booking — same customer */}
             {action === 'adjust' && (
               <div style={{marginBottom:'10px'}}>
-                <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px',fontWeight:600}}>ADJUST TO PLOT</div>
+                <div style={{fontSize:"11px",color:"#64748b",marginBottom:"4px",fontWeight:600}}>ADJUST TO PLOT (SAME CUSTOMER)</div>
                 {otherBookings.length === 0 ? (
                   <div style={{fontSize:'12px',color:'#ef4444',padding:'8px',background:'#fef2f2',borderRadius:'6px'}}>
                     No other active bookings found for this customer.
-                    Use "Hold as Deposit" instead.
+                    Use Open Transfer for a different customer.
                   </div>
                 ) : (
                   <select value={targetBooking} onChange={e=>setTarget(e.target.value)}
@@ -259,6 +325,46 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
                     ))}
                   </select>
                 )}
+              </div>
+            )}
+
+            {/* Open Transfer — any booking */}
+            {action === 'open_transfer' && (
+              <div style={{marginBottom:'10px'}}>
+                <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px',fontWeight:600}}>TRANSFER TO BOOKING</div>
+                <input
+                  value={bookingSearch}
+                  onChange={e => setBookingSearch(e.target.value)}
+                  placeholder="Search by customer, project, or plot..."
+                  style={{width:'100%',padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'13px',boxSizing:'border-box',marginBottom:'6px'}}
+                />
+                {filteredAllBookings.length === 0 ? (
+                  <div style={{fontSize:'12px',color:'#94a3b8',padding:'8px'}}>No bookings found</div>
+                ) : (
+                  <div style={{maxHeight:'160px',overflowY:'auto',border:'1px solid #e2e8f0',borderRadius:'6px'}}>
+                    {filteredAllBookings.map(b => (
+                      <div key={b.id}
+                        onClick={() => setTarget(b.id)}
+                        style={{
+                          padding:'8px 12px',cursor:'pointer',fontSize:'12px',
+                          background: targetBooking === b.id ? '#EAF1FA' : 'white',
+                          borderBottom:'1px solid #f1f5f9',
+                        }}
+                      >
+                        <div style={{fontWeight:600,color:'#1B2A4A'}}>{b.customer}</div>
+                        <div style={{color:'#64748b'}}>{b.project} · Plot {b.plot}{b.block ? ` (${b.block})` : ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {targetBooking && (
+                  <div style={{fontSize:'11px',color:'#16a34a',marginTop:'4px'}}>
+                    ✓ {filteredAllBookings.find(b=>b.id===targetBooking)?.customer} — {filteredAllBookings.find(b=>b.id===targetBooking)?.project} · Plot {filteredAllBookings.find(b=>b.id===targetBooking)?.plot} selected
+                  </div>
+                )}
+                <div style={{fontSize:'11px',color:'#f59e0b',marginTop:'6px',padding:'6px 8px',background:'#fffbeb',borderRadius:'4px'}}>
+                  ⚠ Open transfer — use for CP-instructed adjustments only. Add a note explaining the reason.
+                </div>
               </div>
             )}
 
@@ -361,7 +467,7 @@ export default function ExcessPayments() {
               .reduce((s, p) => s + Number(p.amount), 0)
             const paid = directPaid + (splitTotals[b.id] || 0)
             const totalDue = Number(b.total_consideration || 0)
-            const excess = paid - totalDue
+            const excess = Math.round((paid - totalDue) * 100) / 100
             return {
               booking_id:   b.id,
               customer_id:  b.customer_id,
