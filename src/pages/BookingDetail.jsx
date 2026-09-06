@@ -363,6 +363,8 @@ export default function BookingDetail() {
       queryClient.invalidateQueries({ queryKey: ['payments', bookingId] });
       queryClient.invalidateQueries({ queryKey: ['payments-totals-by-booking'] });
       setShowAddPayment(false);
+      setScopeConfirmed(false);
+      setPaymentScope('single');
       setAmount('');
       setReferenceNo('');
       setNotes('');
@@ -1060,7 +1062,7 @@ export default function BookingDetail() {
                 </label>
               </div>
               <div className="flex justify-end gap-2 mt-3">
-                <button onClick={() => setShowAddPayment(false)}
+                <button onClick={() => { setShowAddPayment(false); setScopeConfirmed(false); setPaymentScope('single'); }}
                   className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm">
                   Cancel
                 </button>
@@ -1070,7 +1072,7 @@ export default function BookingDetail() {
                 </button>
               </div>
             </div>
-          ) : paymentScope === 'single' && scopeConfirmed &&
+          ) : paymentScope === 'single' && (scopeConfirmed || !hasMultipleBookings) &&
           (
           <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -1174,7 +1176,7 @@ export default function BookingDetail() {
 
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setShowAddPayment(false)}
+                onClick={() => { setShowAddPayment(false); setScopeConfirmed(false); setPaymentScope('single'); }}
                 className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm"
               >
                 Cancel
