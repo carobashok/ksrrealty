@@ -123,13 +123,41 @@ export default function NewBooking() {
       const { data, error } = await supabase
         .schema('ksr')
         .from('customers')
-        .select('id, name, mobile, email')
+        .select('id, name, mobile, email, identifier')
         .or(`name.ilike.%${customerSearch}%,mobile.ilike.%${customerSearch}%`)
         .limit(10);
       if (error) throw error;
-      return data;
+
+      // Fetch existing bookings for these customers to show context
+      const ids = data.map(c => c.id)
+      if (!ids.length) return data
+      const { data: bookings } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('customer_id, plots(plot_number, block), projects(name)')
+        .in('customer_id', ids)
+        .in('status', ['booked', 'registered'])
+      
+      // Group bookings by customer
+      const bookingMap = {}
+      ;(bookings || []).forEach(b => {
+        if (!bookingMap[b.customer_id]) bookingMap[b.customer_id] = []
+        bookingMap[b.customer_id].push(b)
+      })
+
+      return data.map(c => ({ ...c, _bookings: bookingMap[c.id] || [] }))
     },
   });
+
+  // Build contextual label for a customer in the dropdown
+  const customerLabel = (c) => {
+    if (!c._bookings || c._bookings.length === 0) {
+      return c.identifier ? c.identifier : null
+    }
+    return c._bookings
+      .map(b => `${b.projects?.name || ''} ${b.plots?.plot_number || ''}`.trim())
+      .join(', ')
+  }
 
   const { data: landowners = [] } = useQuery({
     queryKey: ['project-landowners', projectId],
@@ -552,11 +580,16 @@ export default function NewBooking() {
                       key={c.id}
                       onClick={() => {
                         setCustomerId(c.id);
-                        setCustomerSearch(c.name);
+                        const lbl = customerLabel(c)
+                        setCustomerSearch(lbl ? `${c.name} · ${lbl}` : c.name);
                       }}
                       className="w-full text-left p-3 hover:bg-slate-50 text-sm"
                     >
-                      <div className="font-medium text-slate-800">{c.name}</div>
+                      <div className="font-medium text-slate-800">{c.name}
+                        {customerLabel(c) && (
+                          <span className="ml-2 text-xs font-normal text-slate-400">· {customerLabel(c)}</span>
+                        )}
+                      </div>
                       <div className="text-slate-500">{c.mobile}</div>
                     </button>
                   ))
@@ -565,8 +598,9 @@ export default function NewBooking() {
             )}
             {selectedCustomer && (
               <div className="mt-2 bg-slate-50 rounded-lg p-3 text-sm">
-                <span className="font-medium">{selectedCustomer.name}</span> —{' '}
-                {selectedCustomer.mobile}
+                <span className="font-medium">{selectedCustomer.name}</span>
+                {(() => { const lbl = customerLabel(selectedCustomer); return lbl ? <span className="text-slate-400"> · {lbl}</span> : null })()}
+                {selectedCustomer.mobile && <span className="text-slate-500"> — {selectedCustomer.mobile}</span>}
               </div>
             )}
             {selectedCustomer && totalHeldCredit > 0 && (

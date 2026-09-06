@@ -284,9 +284,14 @@ export default function Bookings() {
                   </td>
                   <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
                     {b.created_at
-                      ? new Date(b.created_at).toLocaleDateString('en-IN', {
-                          day: '2-digit', month: 'short', year: 'numeric',
-                        })
+                      ? <>
+                          <div>{new Date(b.created_at).toLocaleDateString('en-IN', {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                          })}</div>
+                          <div className="text-slate-400">{new Date(b.created_at).toLocaleTimeString('en-IN', {
+                            hour: '2-digit', minute: '2-digit', hour12: true,
+                          })}</div>
+                        </>
                       : '—'}
                   </td>
                 </tr>

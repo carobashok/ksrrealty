@@ -207,6 +207,49 @@ export default function BookingDetail() {
   });
   const hasMultipleBookings = otherBookings.length > 0;
 
+  // Fetch all bookings for this customer (for the group plots panel)
+  const { data: customerBookings = [] } = useQuery({
+    queryKey: ['customer-all-bookings', booking?.customer_id, bookingId],
+    enabled: !!booking?.customer_id && hasMultipleBookings,
+    queryFn: async () => {
+      const { data: bData, error } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('id, total_consideration, status, plot_id, project_id')
+        .eq('customer_id', booking.customer_id)
+        .in('status', ['booked', 'registered'])
+      if (error) throw error
+
+      const plotIds = bData.map(b => b.plot_id).filter(Boolean)
+      const projIds = [...new Set(bData.map(b => b.project_id).filter(Boolean))]
+
+      const [{ data: plots }, { data: projs }, { data: directPmts }, { data: splitPmts }] = await Promise.all([
+        supabase.schema('ksr').from('plots').select('id, plot_number, block').in('id', plotIds),
+        supabase.schema('ksr').from('projects').select('id, name').in('id', projIds),
+        supabase.schema('ksr').from('payments').select('booking_id, amount').neq('paid_by', 'ksr').not('booking_id', 'is', null).in('booking_id', bData.map(b => b.id)),
+        supabase.schema('ksr').from('booking_payment_splits').select('booking_id, amount').in('booking_id', bData.map(b => b.id)),
+      ])
+
+      const plotMap = Object.fromEntries((plots||[]).map(p => [p.id, p]))
+      const projMap = Object.fromEntries((projs||[]).map(p => [p.id, p]))
+      const paidMap = {}
+      ;(directPmts||[]).forEach(p => { paidMap[p.booking_id] = (paidMap[p.booking_id]||0) + Number(p.amount) })
+      ;(splitPmts||[]).forEach(s => { paidMap[s.booking_id] = (paidMap[s.booking_id]||0) + Number(s.amount) })
+
+      return bData
+        .sort((a, b) => (plotMap[a.plot_id]?.plot_number||'').localeCompare(plotMap[b.plot_id]?.plot_number||''))
+        .map(b => ({
+          id:          b.id,
+          isCurrent:   b.id === bookingId,
+          project:     projMap[b.project_id]?.name || '—',
+          plot_number: plotMap[b.plot_id]?.plot_number || '—',
+          block:       plotMap[b.plot_id]?.block || '',
+          total:       Number(b.total_consideration || 0),
+          paid:        paidMap[b.id] || 0,
+        }))
+    },
+  })
+
   // Normalise split payments to same shape as regular payments for unified ledger
   const splitLedgerRows = splitPayments.map(sp => ({
     id:           sp.id,
@@ -757,6 +800,62 @@ export default function BookingDetail() {
           </button>
         </div>
       </div>
+
+      {/* Customer Group Plots Panel */}
+      {hasMultipleBookings && customerBookings.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+            {booking.customers?.name} — {customerBookings.length} plots
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-slate-400 uppercase">
+                  <th className="text-left pb-2">Plot</th>
+                  <th className="text-left pb-2">Project</th>
+                  <th className="text-right pb-2">Total</th>
+                  <th className="text-right pb-2">Paid</th>
+                  <th className="text-right pb-2">Pending</th>
+                  <th className="pb-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {customerBookings.map(b => (
+                  <tr key={b.id} className={`border-t border-slate-100 ${b.isCurrent ? 'bg-blue-50/50' : ''}`}>
+                    <td className="py-2 font-medium text-slate-800">
+                      Plot {b.plot_number}{b.block ? ` (${b.block})` : ''}
+                      {b.isCurrent && <span className="ml-2 text-xs text-blue-600 font-normal">current</span>}
+                    </td>
+                    <td className="py-2 text-slate-600">{b.project}</td>
+                    <td className="py-2 text-right text-slate-700">{inr(b.total)}</td>
+                    <td className="py-2 text-right text-green-700">{inr(b.paid)}</td>
+                    <td className="py-2 text-right text-red-600">{inr(b.total - b.paid)}</td>
+                    <td className="py-2 text-right">
+                      {!b.isCurrent && (
+                        <button
+                          onClick={() => navigate(`/bookings/${b.id}?returnTo=/bookings/${bookingId}`)}
+                          className="text-xs text-[#0a1f44] hover:underline"
+                        >
+                          View →
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 font-semibold">
+                  <td className="pt-2 text-slate-700" colSpan={2}>Total</td>
+                  <td className="pt-2 text-right text-slate-800">{inr(customerBookings.reduce((s,b)=>s+b.total,0))}</td>
+                  <td className="pt-2 text-right text-green-700">{inr(customerBookings.reduce((s,b)=>s+b.paid,0))}</td>
+                  <td className="pt-2 text-right text-red-600">{inr(customerBookings.reduce((s,b)=>s+(b.total-b.paid),0))}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Overall summary */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">

@@ -7,7 +7,7 @@ import { Search, Plus, Pencil, Trash2, X, Phone, Mail, MapPin, Wallet, HelpCircl
 import CustomersHelp from '../components/help/CustomersHelp';
 
 
-const emptyForm = { id: null, name: '', mobile: '', email: '', address: '', pan: '', aadhaar: '' };
+const emptyForm = { id: null, name: '', identifier: '', mobile: '', email: '', address: '', pan: '', aadhaar: '' };
 
 export default function Customers() {
   const queryClient = useQueryClient();
@@ -179,6 +179,7 @@ export default function Customers() {
     setForm({
       id: customer.id,
       name: customer.name || '',
+      identifier: customer.identifier || '',
       mobile: customer.mobile || '',
       email: customer.email || '',
       address: customer.address || '',
@@ -272,7 +273,7 @@ export default function Customers() {
             <tbody>
               {filtered.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">{c.name}{c.identifier && <span className="ml-2 text-xs text-slate-400 font-normal">· {c.identifier}</span>}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {c.mobile ? (
                       <span className="flex items-center gap-1">
@@ -355,6 +356,17 @@ export default function Customers() {
                   className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
                   placeholder="Full name"
                 />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500">Identifier</label>
+                <input
+                  type="text"
+                  value={form.identifier || ''}
+                  onChange={(e) => setForm({ ...form, identifier: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+                  placeholder="e.g. JRS, TME, Raja-A1"
+                />
+                <p className="text-xs text-slate-400 mt-1">Shown in booking search for unbooked customers. Not on documents.</p>
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500">Mobile</label>
