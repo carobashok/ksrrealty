@@ -43,6 +43,7 @@ export default function BookingDetail() {
 
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [paymentScope, setPaymentScope] = useState('single'); // 'single' | 'multi'
+  const [scopeConfirmed, setScopeConfirmed] = useState(false);
   const [showMultiModal, setShowMultiModal] = useState(false);
 
   // Incentive split state
@@ -975,7 +976,7 @@ export default function BookingDetail() {
             Payment History
           </h3>
           <button
-            onClick={() => { setShowAddPayment((s) => !s); setPaymentScope('single'); }}
+            onClick={() => { setShowAddPayment((s) => !s); setPaymentScope('single'); setScopeConfirmed(false); }}
             className="flex items-center gap-1 text-sm bg-[#0a1f44] text-white px-3 py-1.5 rounded-lg hover:bg-[#122a5c]"
           >
             <Plus size={14} /> Add Payment
@@ -984,7 +985,7 @@ export default function BookingDetail() {
 
         {showAddPayment && (
           /* Scope selector — only shown when customer has multiple bookings */
-          hasMultipleBookings && paymentScope === 'single' ? (
+          hasMultipleBookings && !scopeConfirmed ? (
             <div className="bg-slate-50 rounded-lg p-4 mb-4 border border-slate-200">
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
                 This payment covers
@@ -1010,6 +1011,7 @@ export default function BookingDetail() {
                     checked={paymentScope === 'multi'}
                     onChange={() => {
                       setPaymentScope('multi')
+                      setScopeConfirmed(false)
                       setShowAddPayment(false)
                       setShowMultiModal(true)
                     }}
@@ -1025,14 +1027,18 @@ export default function BookingDetail() {
                   </div>
                 </label>
               </div>
-              <div className="flex justify-end mt-3">
+              <div className="flex justify-end gap-2 mt-3">
                 <button onClick={() => setShowAddPayment(false)}
                   className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm">
                   Cancel
                 </button>
+                <button onClick={() => setScopeConfirmed(true)}
+                  className="px-4 py-1.5 bg-[#0a1f44] text-white rounded-lg text-sm hover:bg-[#122a5c]">
+                  Continue →
+                </button>
               </div>
             </div>
-          ) : paymentScope === 'single' &&
+          ) : paymentScope === 'single' && scopeConfirmed &&
           (
           <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
