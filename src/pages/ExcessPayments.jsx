@@ -128,12 +128,12 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
           .schema('ksr')
           .from('customer_deposits')
           .insert({
-            customer_id:       row.customer_id,
-            booking_id:        targetBooking,
-            source_booking_id: row.booking_id,
-            amount:            amt,
-            notes:             notes || `Excess transferred from Plot ${row.plot_number}`,
-            deposit_date:      date,
+            customer_id:          row.customer_id,
+            applied_to_booking_id: targetBooking,
+            source_booking_id:    row.booking_id,
+            amount:               amt,
+            notes:                notes || `Excess transferred from Plot ${row.plot_number}`,
+            deposit_date:         date,
           })
         if (error) throw error
         toast.success(`${inr(amt)} adjusted to selected plot`)
@@ -145,12 +145,12 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
           .schema('ksr')
           .from('customer_deposits')
           .insert({
-            customer_id:       row.customer_id,
-            booking_id:        targetBooking,
-            source_booking_id: row.booking_id,
-            amount:            amt,
-            notes:             notes || `Open transfer from ${row.customer} — Plot ${row.plot_number}`,
-            deposit_date:      date,
+            customer_id:          row.customer_id,
+            applied_to_booking_id: targetBooking,
+            source_booking_id:    row.booking_id,
+            amount:               amt,
+            notes:                notes || `Open transfer from ${row.customer} — Plot ${row.plot_number}`,
+            deposit_date:         date,
           })
         if (error) throw error
         toast.success(`${inr(amt)} transferred to selected booking`)
@@ -161,12 +161,12 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
           .schema('ksr')
           .from('customer_deposits')
           .insert({
-            customer_id:       row.customer_id,
-            booking_id:        null,
-            source_booking_id: row.booking_id,
-            amount:            amt,
-            notes:             notes || `Excess from Plot ${row.plot_number} held as deposit`,
-            deposit_date:      date,
+            customer_id:          row.customer_id,
+            applied_to_booking_id: null,
+            source_booking_id:    row.booking_id,
+            amount:               amt,
+            notes:                notes || `Excess from Plot ${row.plot_number} held as deposit`,
+            deposit_date:         date,
           })
         if (error) throw error
         toast.success(`${inr(amt)} held as customer deposit`)
