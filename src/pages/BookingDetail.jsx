@@ -225,11 +225,12 @@ export default function BookingDetail() {
       const projIds = [...new Set(bData.map(b => b.project_id).filter(Boolean))]
       const bIds = bData.map(b => b.id)
 
-      const [{ data: plots }, { data: projs }, { data: directPmts }, { data: splitPmts }] = await Promise.all([
+      const [{ data: plots }, { data: projs }, { data: directPmts }, { data: splitPmts }, { data: deposits }] = await Promise.all([
         supabase.schema('ksr').from('plots').select('id, plot_number, block').in('id', plotIds),
         supabase.schema('ksr').from('projects').select('id, name').in('id', projIds),
         supabase.schema('ksr').from('payments').select('booking_id, amount').neq('paid_by', 'ksr').not('booking_id', 'is', null).in('booking_id', bIds),
         supabase.schema('ksr').from('booking_payment_splits').select('booking_id, amount').in('booking_id', bIds),
+        supabase.schema('ksr').from('customer_deposits').select('source_booking_id, applied_to_booking_id, amount').eq('status', 'applied').or(`source_booking_id.in.(${bIds.join(',')}),applied_to_booking_id.in.(${bIds.join(',')})`),
       ])
 
       const plotMap = Object.fromEntries((plots||[]).map(p => [p.id, p]))
@@ -237,6 +238,10 @@ export default function BookingDetail() {
       const paidMap = {}
       ;(directPmts||[]).forEach(p => { paidMap[p.booking_id] = (paidMap[p.booking_id]||0) + Number(p.amount) })
       ;(splitPmts||[]).forEach(s => { paidMap[s.booking_id] = (paidMap[s.booking_id]||0) + Number(s.amount) })
+      // Subtract settled deposits from source bookings (excess already transferred out)
+      ;(deposits||[]).forEach(d => { paidMap[d.source_booking_id] = (paidMap[d.source_booking_id]||0) - Number(d.amount) })
+      // Add settled deposits to target bookings (credit received)
+      ;(deposits||[]).forEach(d => { if(d.applied_to_booking_id) paidMap[d.applied_to_booking_id] = (paidMap[d.applied_to_booking_id]||0) + Number(d.amount) })
 
       return bData
         .sort((a, b) => (plotMap[a.plot_id]?.plot_number||'').localeCompare(plotMap[b.plot_id]?.plot_number||''))
@@ -830,7 +835,12 @@ export default function BookingDetail() {
                   <td className="py-2 text-slate-600">{b.project}</td>
                   <td className="py-2 text-right text-slate-700">{inr(b.total)}</td>
                   <td className="py-2 text-right text-green-700">{inr(b.paid)}</td>
-                  <td className="py-2 text-right text-red-600">{inr(b.total - b.paid)}</td>
+                  <td className="py-2 text-right">
+                    {b.total - b.paid < 0
+                      ? <span className="text-purple-600 text-xs font-medium">Excess {inr(Math.abs(b.total - b.paid))}</span>
+                      : <span className="text-red-600">{inr(b.total - b.paid)}</span>
+                    }
+                  </td>
                   <td className="py-2 text-right">
                     {!b.isCurrent && (
                       <button onClick={() => navigate(`/bookings/${b.id}?returnTo=/bookings/${bookingId}`)}
