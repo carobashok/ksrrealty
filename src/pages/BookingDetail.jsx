@@ -46,6 +46,7 @@ export default function BookingDetail() {
   const [paymentScope, setPaymentScope] = useState('single'); // 'single' | 'multi'
   const [scopeConfirmed, setScopeConfirmed] = useState(false);
   const [showMultiModal, setShowMultiModal] = useState(false);
+  const [editDeposit, setEditDeposit] = useState(null); // { id, date, notes }
 
   // Incentive split state
   const [incentiveRows, setIncentiveRows] = useState([{ employee_id: '', amount: '' }]);
@@ -207,7 +208,7 @@ export default function BookingDetail() {
   });
   const hasMultipleBookings = otherBookings.length > 0;
 
-  // Fetch all bookings for this customer (for the group plots panel)
+  // All bookings for this customer (group plots panel)
   const { data: customerBookings = [] } = useQuery({
     queryKey: ['customer-all-bookings', booking?.customer_id, bookingId],
     enabled: !!booking?.customer_id && hasMultipleBookings,
@@ -222,12 +223,13 @@ export default function BookingDetail() {
 
       const plotIds = bData.map(b => b.plot_id).filter(Boolean)
       const projIds = [...new Set(bData.map(b => b.project_id).filter(Boolean))]
+      const bIds = bData.map(b => b.id)
 
       const [{ data: plots }, { data: projs }, { data: directPmts }, { data: splitPmts }] = await Promise.all([
         supabase.schema('ksr').from('plots').select('id, plot_number, block').in('id', plotIds),
         supabase.schema('ksr').from('projects').select('id, name').in('id', projIds),
-        supabase.schema('ksr').from('payments').select('booking_id, amount').neq('paid_by', 'ksr').not('booking_id', 'is', null).in('booking_id', bData.map(b => b.id)),
-        supabase.schema('ksr').from('booking_payment_splits').select('booking_id, amount').in('booking_id', bData.map(b => b.id)),
+        supabase.schema('ksr').from('payments').select('booking_id, amount').neq('paid_by', 'ksr').not('booking_id', 'is', null).in('booking_id', bIds),
+        supabase.schema('ksr').from('booking_payment_splits').select('booking_id, amount').in('booking_id', bIds),
       ])
 
       const plotMap = Object.fromEntries((plots||[]).map(p => [p.id, p]))
@@ -807,53 +809,49 @@ export default function BookingDetail() {
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
             {booking.customers?.name} — {customerBookings.length} plots
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-slate-400 uppercase">
-                  <th className="text-left pb-2">Plot</th>
-                  <th className="text-left pb-2">Project</th>
-                  <th className="text-right pb-2">Total</th>
-                  <th className="text-right pb-2">Paid</th>
-                  <th className="text-right pb-2">Pending</th>
-                  <th className="pb-2"></th>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-slate-400 uppercase">
+                <th className="text-left pb-2">Plot</th>
+                <th className="text-left pb-2">Project</th>
+                <th className="text-right pb-2">Total</th>
+                <th className="text-right pb-2">Paid</th>
+                <th className="text-right pb-2">Pending</th>
+                <th className="pb-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {customerBookings.map(b => (
+                <tr key={b.id} className={`border-t border-slate-100 ${b.isCurrent ? 'bg-blue-50/50' : ''}`}>
+                  <td className="py-2 font-medium text-slate-800">
+                    Plot {b.plot_number}{b.block ? ` (${b.block})` : ''}
+                    {b.isCurrent && <span className="ml-2 text-xs text-blue-600 font-normal">current</span>}
+                  </td>
+                  <td className="py-2 text-slate-600">{b.project}</td>
+                  <td className="py-2 text-right text-slate-700">{inr(b.total)}</td>
+                  <td className="py-2 text-right text-green-700">{inr(b.paid)}</td>
+                  <td className="py-2 text-right text-red-600">{inr(b.total - b.paid)}</td>
+                  <td className="py-2 text-right">
+                    {!b.isCurrent && (
+                      <button onClick={() => navigate(`/bookings/${b.id}?returnTo=/bookings/${bookingId}`)}
+                        className="text-xs text-[#0a1f44] hover:underline">
+                        View →
+                      </button>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {customerBookings.map(b => (
-                  <tr key={b.id} className={`border-t border-slate-100 ${b.isCurrent ? 'bg-blue-50/50' : ''}`}>
-                    <td className="py-2 font-medium text-slate-800">
-                      Plot {b.plot_number}{b.block ? ` (${b.block})` : ''}
-                      {b.isCurrent && <span className="ml-2 text-xs text-blue-600 font-normal">current</span>}
-                    </td>
-                    <td className="py-2 text-slate-600">{b.project}</td>
-                    <td className="py-2 text-right text-slate-700">{inr(b.total)}</td>
-                    <td className="py-2 text-right text-green-700">{inr(b.paid)}</td>
-                    <td className="py-2 text-right text-red-600">{inr(b.total - b.paid)}</td>
-                    <td className="py-2 text-right">
-                      {!b.isCurrent && (
-                        <button
-                          onClick={() => navigate(`/bookings/${b.id}?returnTo=/bookings/${bookingId}`)}
-                          className="text-xs text-[#0a1f44] hover:underline"
-                        >
-                          View →
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-slate-200 font-semibold">
-                  <td className="pt-2 text-slate-700" colSpan={2}>Total</td>
-                  <td className="pt-2 text-right text-slate-800">{inr(customerBookings.reduce((s,b)=>s+b.total,0))}</td>
-                  <td className="pt-2 text-right text-green-700">{inr(customerBookings.reduce((s,b)=>s+b.paid,0))}</td>
-                  <td className="pt-2 text-right text-red-600">{inr(customerBookings.reduce((s,b)=>s+(b.total-b.paid),0))}</td>
-                  <td></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 font-semibold">
+                <td className="pt-2 text-slate-700" colSpan={2}>Total</td>
+                <td className="pt-2 text-right text-slate-800">{inr(customerBookings.reduce((s,b)=>s+b.total,0))}</td>
+                <td className="pt-2 text-right text-green-700">{inr(customerBookings.reduce((s,b)=>s+b.paid,0))}</td>
+                <td className="pt-2 text-right text-red-600">{inr(customerBookings.reduce((s,b)=>s+(b.total-b.paid),0))}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       )}
 
@@ -1357,6 +1355,15 @@ export default function BookingDetail() {
                         <Receipt size={14} />
                       </button>
                       {/* Edit/Delete only for regular payments, not split rows */}
+                      {p._isDeposit && (
+                      <button
+                        onClick={() => setEditDeposit({ id: p.id, date: p.payment_date, notes: p.notes || '' })}
+                        className="p-1 text-slate-400 hover:text-[#0a1f44] hover:bg-slate-100 rounded ml-1"
+                        title="Edit date & remarks"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      )}
                       {!p._isMultiPlot && !p._isDeposit && (
                       <button
                         onClick={() => openEditPayment(p)}
@@ -1691,6 +1698,50 @@ export default function BookingDetail() {
           </div>
         </div>
       )}
+      {/* Edit Deposit Modal */}
+      {editDeposit && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}}>
+          <div style={{background:'white',borderRadius:'12px',padding:'24px',width:'100%',maxWidth:'420px',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
+            <div style={{fontSize:'15px',fontWeight:700,color:'#1B2A4A',marginBottom:'16px'}}>Edit Adjustment</div>
+            <div style={{marginBottom:'12px'}}>
+              <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px',fontWeight:600}}>DATE</div>
+              <input type="date" value={editDeposit.date}
+                onChange={e => setEditDeposit(d => ({...d, date: e.target.value}))}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+              />
+            </div>
+            <div style={{marginBottom:'20px'}}>
+              <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px',fontWeight:600}}>REMARKS</div>
+              <input type="text" value={editDeposit.notes}
+                onChange={e => setEditDeposit(d => ({...d, notes: e.target.value}))}
+                placeholder="Enter remarks..."
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
+              />
+            </div>
+            <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
+              <button onClick={() => setEditDeposit(null)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm">
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const { error } = await supabase.schema('ksr').from('customer_deposits')
+                    .update({ deposit_date: editDeposit.date, notes: editDeposit.notes })
+                    .eq('id', editDeposit.id)
+                  if (error) { toast.error(error.message); return }
+                  toast.success('Adjustment updated')
+                  queryClient.invalidateQueries({ queryKey: ['applied-deposits', bookingId] })
+                  setEditDeposit(null)
+                }}
+                className="px-4 py-2 bg-[#0a1f44] text-white rounded-lg hover:bg-[#122a5c] text-sm"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
