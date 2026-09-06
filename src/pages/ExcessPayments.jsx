@@ -133,6 +133,7 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
             source_booking_id:    row.booking_id,
             amount:               amt,
             mode:                 mode,
+            status:               'applied',
             notes:                notes || `Excess transferred from Plot ${row.plot_number}`,
             deposit_date:         date,
           })
@@ -151,6 +152,7 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
             source_booking_id:    row.booking_id,
             amount:               amt,
             mode:                 mode,
+            status:               'applied',
             notes:                notes || `Open transfer from ${row.customer} — Plot ${row.plot_number}`,
             deposit_date:         date,
           })
@@ -463,6 +465,19 @@ export default function ExcessPayments() {
           return acc
         }, {})
 
+        // Fetch applied deposits (excess adjustments already settled)
+        const { data: deposits } = await supabase
+          .schema('ksr')
+          .from('customer_deposits')
+          .select('source_booking_id, amount')
+          .eq('status', 'applied')
+          .in('source_booking_id', bookingIds)
+
+        const depositTotals = (deposits || []).reduce((acc, d) => {
+          acc[d.source_booking_id] = (acc[d.source_booking_id] || 0) + Number(d.amount)
+          return acc
+        }, {})
+
         return d2
           .map(b => {
             const directPaid = (b.payments || [])
@@ -470,7 +485,8 @@ export default function ExcessPayments() {
               .reduce((s, p) => s + Number(p.amount), 0)
             const paid = directPaid + (splitTotals[b.id] || 0)
             const totalDue = Number(b.total_consideration || 0)
-            const excess = Math.round((paid - totalDue) * 100) / 100
+            const alreadySettled = depositTotals[b.id] || 0
+            const excess = Math.round((paid - totalDue - alreadySettled) * 100) / 100
             return {
               booking_id:   b.id,
               customer_id:  b.customer_id,

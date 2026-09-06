@@ -77,13 +77,25 @@ export default function Bookings() {
         .select('booking_id, amount')
       if (e2) throw e2
 
-      // Merge both into totals per booking
+      // 3. Applied deposits (excess adjustments credited to bookings)
+      const { data: deposits, error: e3 } = await supabase
+        .schema('ksr')
+        .from('customer_deposits')
+        .select('applied_to_booking_id, amount')
+        .eq('status', 'applied')
+        .not('applied_to_booking_id', 'is', null)
+      if (e3) throw e3
+
+      // Merge all into totals per booking
       const totals = {}
       direct.forEach(p => {
         totals[p.booking_id] = (totals[p.booking_id] || 0) + Number(p.amount)
       })
       splits.forEach(s => {
         totals[s.booking_id] = (totals[s.booking_id] || 0) + Number(s.amount)
+      })
+      deposits.forEach(d => {
+        totals[d.applied_to_booking_id] = (totals[d.applied_to_booking_id] || 0) + Number(d.amount)
       })
       return totals
     },

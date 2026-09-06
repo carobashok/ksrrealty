@@ -13,6 +13,7 @@ const PAYMENT_MODES = [
   { value: 'neft', label: 'NEFT' },
   { value: 'rtgs', label: 'RTGS' },
   { value: 'upi', label: 'UPI' },
+  { value: 'adjustment', label: 'Adjustment' },
   { value: 'dd', label: 'DD' },
   { value: 'imps', label: 'IMPS' },
 ];
@@ -158,6 +159,35 @@ export default function BookingDetail() {
       return data;
     },
   });
+
+  // Applied customer deposits (excess adjustments credited to this booking)
+  const { data: appliedDeposits = [] } = useQuery({
+    queryKey: ['applied-deposits', bookingId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('customer_deposits')
+        .select('id, amount, mode, deposit_date, notes, reference_no, source_booking_id')
+        .eq('applied_to_booking_id', bookingId)
+        .eq('status', 'applied')
+        .order('deposit_date', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Normalise applied deposits to same shape as payments for ledger
+  const depositLedgerRows = appliedDeposits.map(d => ({
+    id:           d.id,
+    payment_date: d.deposit_date,
+    amount:       d.amount,
+    mode:         'adjustment',
+    reference_no: d.reference_no,
+    notes:        d.notes || 'Excess payment adjusted',
+    payment_type: 'company_share',
+    paid_by:      'plot_purchaser',
+    _isDeposit:   true,
+  }));
 
   // Check if customer has other active bookings (for multi-plot payment option)
   const { data: otherBookings = [] } = useQuery({
@@ -510,13 +540,15 @@ export default function BookingDetail() {
   const allPayments = [
     ...payments,
     ...splitLedgerRows,
+    ...depositLedgerRows,
   ].sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
 
   // Company share ledger — includes split payments
   const companyPaid = payments
     .filter((p) => p.payment_type === 'company_share')
     .reduce((sum, p) => sum + Number(p.amount), 0)
-    + splitLedgerRows.reduce((sum, p) => sum + Number(p.amount), 0);
+    + splitLedgerRows.reduce((sum, p) => sum + Number(p.amount), 0)
+    + depositLedgerRows.reduce((sum, p) => sum + Number(p.amount), 0);
   const companyDue = (Number(booking.company_share_amt) || 0) + (Number(booking.construction_amount) || 0);
   const companyBalance = companyDue - companyPaid;
 
@@ -1194,6 +1226,11 @@ export default function BookingDetail() {
                           Multi-plot
                         </span>
                       )}
+                      {p._isDeposit && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-purple-50 text-purple-700 border border-purple-200">
+                          Adjusted
+                        </span>
+                      )}
                       {p.is_construction && (
                         <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-orange-50 text-orange-700 border border-orange-200">
                           🏗 Construction
@@ -1219,7 +1256,7 @@ export default function BookingDetail() {
                         <Receipt size={14} />
                       </button>
                       {/* Edit/Delete only for regular payments, not split rows */}
-                      {!p._isMultiPlot && (
+                      {!p._isMultiPlot && !p._isDeposit && (
                       <button
                         onClick={() => openEditPayment(p)}
                         className="p-1 text-slate-400 hover:text-[#0a1f44] hover:bg-slate-100 rounded ml-1"
@@ -1227,7 +1264,7 @@ export default function BookingDetail() {
                         <Pencil size={14} />
                       </button>
                       )}
-                      {!p._isMultiPlot && (
+                      {!p._isMultiPlot && !p._isDeposit && (
                       <button
                         onClick={() => setDeleteTarget(p)}
                         className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded ml-1"
