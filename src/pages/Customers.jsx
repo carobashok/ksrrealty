@@ -273,7 +273,10 @@ export default function Customers() {
             <tbody>
               {filtered.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-slate-800">{c.name}{c.identifier && <span className="ml-2 text-xs text-slate-400 font-normal">· {c.identifier}</span>}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                    {c.name}
+                    {c.identifier && <span className="ml-2 text-xs text-slate-400 font-normal">· {c.identifier}</span>}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">
                     {c.mobile ? (
                       <span className="flex items-center gap-1">
