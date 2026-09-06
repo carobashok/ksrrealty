@@ -132,6 +132,7 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
             applied_to_booking_id: targetBooking,
             source_booking_id:    row.booking_id,
             amount:               amt,
+            mode:                 mode,
             notes:                notes || `Excess transferred from Plot ${row.plot_number}`,
             deposit_date:         date,
           })
@@ -149,6 +150,7 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
             applied_to_booking_id: targetBooking,
             source_booking_id:    row.booking_id,
             amount:               amt,
+            mode:                 mode,
             notes:                notes || `Open transfer from ${row.customer} — Plot ${row.plot_number}`,
             deposit_date:         date,
           })
@@ -165,6 +167,7 @@ function SettlementModal({ row, onClose, onDone, ignoreThreshold }) {
             applied_to_booking_id: null,
             source_booking_id:    row.booking_id,
             amount:               amt,
+            mode:                 mode,
             notes:                notes || `Excess from Plot ${row.plot_number} held as deposit`,
             deposit_date:         date,
           })
