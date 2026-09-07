@@ -9,6 +9,7 @@ const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'inventory', label: 'Inventory' },
   { id: 'financial', label: 'Plot Financial Summary' },
+  { id: 'rate_variance', label: 'Rate Variance' },
 ];
 
 export default function Dashboard() {
@@ -39,6 +40,7 @@ export default function Dashboard() {
       {activeTab === 'overview' && <OverviewTab />}
       {activeTab === 'inventory' && <InventoryTab />}
       {activeTab === 'financial' && <FinancialSummaryTab />}
+      {activeTab === 'rate_variance' && <RateVarianceTab />}
     </div>
   );
 }
@@ -431,5 +433,161 @@ function FinancialSummaryTab() {
         )}
       </div>
     </>
+  );
+
+// ── Rate Variance Tab ────────────────────────────────────────────────────
+}
+
+function RateVarianceTab() {
+  const [projectId, setProjectId] = useState('');
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.schema('ksr').from('projects')
+        .select('id, name, sale_rate_per_sqft, sale_rate_per_cent, unit_of_measure')
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const selectedProject = projects.find(p => p.id === projectId);
+
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['rate-variance', projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const { data: bookings, error } = await supabase.schema('ksr')
+        .from('bookings')
+        .select(`
+          id, total_consideration,
+          plots ( plot_number, block, area_sqft ),
+          customers ( name )
+        `)
+        .eq('project_id', projectId)
+        .in('status', ['booked', 'registered', 'agreement_signed'])
+        .order('created_at');
+      if (error) throw error;
+      return bookings;
+    },
+  });
+
+  const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
+  const baseRate = selectedProject?.sale_rate_per_sqft || 0;
+
+  const computed = rows.map(b => {
+    const area  = Number(b.plots?.area_sqft || 0);
+    const total = Number(b.total_consideration || 0);
+    const actualRate = area > 0 ? Math.round(total / area) : 0;
+    const variance   = actualRate - baseRate;
+    const variancePct = baseRate > 0 ? ((variance / baseRate) * 100).toFixed(1) : 0;
+    return { ...b, area, total, actualRate, variance, variancePct };
+  });
+
+  const avgActual  = computed.length ? Math.round(computed.reduce((s,r) => s + r.actualRate, 0) / computed.length) : 0;
+  const totalVariance = computed.reduce((s,r) => s + (r.variance * r.area), 0);
+
+  return (
+    <div>
+      {/* Project selector */}
+      <div className="flex items-center gap-4 mb-6">
+        <select value={projectId} onChange={e => setProjectId(e.target.value)}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30 min-w-[250px]">
+          <option value="">Select Project...</option>
+          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        {selectedProject && (
+          <div className="text-sm text-slate-500">
+            Base rate: <strong className="text-slate-800">₹{Number(baseRate).toLocaleString('en-IN')}/sqft</strong>
+          </div>
+        )}
+      </div>
+
+      {/* Summary cards */}
+      {computed.length > 0 && (
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          {[
+            ['Base Rate', `₹${Number(baseRate).toLocaleString('en-IN')}/sqft`, 'text-slate-800'],
+            ['Avg Actual Rate', `₹${Number(avgActual).toLocaleString('en-IN')}/sqft`, avgActual >= baseRate ? 'text-green-700' : 'text-red-600'],
+            ['Avg Variance', `₹${Number(avgActual - baseRate).toLocaleString('en-IN')}/sqft`, avgActual >= baseRate ? 'text-green-700' : 'text-red-600'],
+            ['Total Variance', inr(Math.abs(totalVariance)), totalVariance >= 0 ? 'text-green-700' : 'text-red-600'],
+          ].map(([label, value, color]) => (
+            <div key={label} className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="text-xs text-slate-400 mb-1">{label}</div>
+              <div className={`text-xl font-semibold ${color}`}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Table */}
+      {!projectId ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">
+          Select a project to view rate variance
+        </div>
+      ) : isLoading ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">Loading...</div>
+      ) : computed.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">No bookings found for this project</div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="text-left px-4 py-3">Customer</th>
+                  <th className="text-left px-4 py-3">Plot</th>
+                  <th className="text-right px-4 py-3">Area (sqft)</th>
+                  <th className="text-right px-4 py-3">Total Consideration</th>
+                  <th className="text-right px-4 py-3">Actual Rate/sqft</th>
+                  <th className="text-right px-4 py-3">Base Rate/sqft</th>
+                  <th className="text-right px-4 py-3">Variance/sqft</th>
+                  <th className="text-right px-4 py-3">Variance %</th>
+                  <th className="text-right px-4 py-3">Total Variance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {computed.map(r => (
+                  <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-slate-800">{r.customers?.name || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      Plot {r.plots?.plot_number}{r.plots?.block ? ` (${r.plots.block})` : ''}
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-600">{Number(r.area).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-right text-slate-700">{inr(r.total)}</td>
+                    <td className="px-4 py-3 text-right text-slate-700">₹{Number(r.actualRate).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-right text-slate-500">₹{Number(baseRate).toLocaleString('en-IN')}</td>
+                    <td className={`px-4 py-3 text-right font-medium ${r.variance > 0 ? 'text-green-700' : r.variance < 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                      {r.variance > 0 ? '+' : ''}{Number(r.variance).toLocaleString('en-IN')}
+                    </td>
+                    <td className={`px-4 py-3 text-right ${r.variance > 0 ? 'text-green-700' : r.variance < 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                      {r.variance > 0 ? '+' : ''}{r.variancePct}%
+                    </td>
+                    <td className={`px-4 py-3 text-right font-medium ${r.variance * r.area > 0 ? 'text-green-700' : r.variance * r.area < 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                      {r.variance * r.area > 0 ? '+' : ''}{inr(Math.abs(r.variance * r.area))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                  <td className="px-4 py-3 text-slate-700" colSpan={2}>Total ({computed.length} plots)</td>
+                  <td className="px-4 py-3 text-right text-slate-700">{Number(computed.reduce((s,r)=>s+r.area,0)).toLocaleString('en-IN')}</td>
+                  <td className="px-4 py-3 text-right text-slate-800">{inr(computed.reduce((s,r)=>s+r.total,0))}</td>
+                  <td className="px-4 py-3 text-right text-slate-700">₹{Number(avgActual).toLocaleString('en-IN')}</td>
+                  <td className="px-4 py-3 text-right text-slate-500">₹{Number(baseRate).toLocaleString('en-IN')}</td>
+                  <td className="px-4 py-3 text-right"></td>
+                  <td className="px-4 py-3 text-right"></td>
+                  <td className={`px-4 py-3 text-right font-semibold ${totalVariance >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    {totalVariance >= 0 ? '+' : ''}{inr(Math.abs(totalVariance))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
