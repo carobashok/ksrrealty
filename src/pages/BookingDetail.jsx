@@ -100,7 +100,7 @@ export default function BookingDetail() {
           `
           *,
           customers ( id, name, mobile, email ),
-          projects ( id, name, is_jv, incentive_amount_per_plot ),
+          projects ( id, name, is_jv, incentive_amount_per_plot, guideline_value_sqft, unit_of_measure ),
           plots ( id, plot_number, block, area_sqft ),
           assigned_executive:employees!assigned_executive_id ( id, name, role ),
           channel_partners ( id, name, partner_code )
@@ -151,7 +151,7 @@ export default function BookingDetail() {
         .schema('ksr')
         .from('booking_payment_splits')
         .select(`
-          id, amount, remarks,
+          id, amount, remarks, payment_type, landowner_id,
           payments ( id, payment_date, mode, reference_no, receipt_no )
         `)
         .eq('booking_id', bookingId)
@@ -266,7 +266,8 @@ export default function BookingDetail() {
     reference_no: sp.payments?.reference_no,
     receipt_no:   sp.payments?.receipt_no,
     notes:        sp.remarks,
-    payment_type: 'company_share',
+    payment_type: sp.payment_type || 'company_share',
+    landowner_id: sp.landowner_id || null,
     paid_by:      'plot_purchaser',
     _isMultiPlot: true,
     _paymentId:   sp.payments?.id,
@@ -307,6 +308,27 @@ export default function BookingDetail() {
     if (error) { toast.error(error.message); return; }
     toast.success(`₹${balance.toLocaleString('en-IN')} written off for ${lo.landowner_name}`);
     queryClient.invalidateQueries({ queryKey: ['booking-payments', bookingId] });
+  };
+
+  // Customer balance write-off
+  const handleCustomerWriteOff = async (balance) => {
+    if (!window.confirm(`Waive ₹${balance.toLocaleString('en-IN')} customer balance? This cannot be undone.`)) return;
+    const { error } = await supabase
+      .schema('ksr')
+      .from('payments')
+      .insert({
+        booking_id:   bookingId,
+        payment_type: 'company_share',
+        paid_by:      'plot_purchaser',
+        payment_date: new Date().toISOString().slice(0, 10),
+        amount:       balance,
+        mode:         'write_off',
+        notes:        'Customer balance waived off',
+      });
+    if (error) { toast.error(error.message); return; }
+    toast.success(`₹${balance.toLocaleString('en-IN')} customer balance waived off`);
+    queryClient.invalidateQueries({ queryKey: ['payments', bookingId] });
+    queryClient.invalidateQueries({ queryKey: ['booking-splits', bookingId] });
   };
 
   // Fetch existing incentive split
@@ -599,7 +621,7 @@ export default function BookingDetail() {
   const companyPaid = payments
     .filter((p) => p.payment_type === 'company_share')
     .reduce((sum, p) => sum + Number(p.amount), 0)
-    + splitLedgerRows.reduce((sum, p) => sum + Number(p.amount), 0)
+    + splitLedgerRows.filter(p => p.payment_type === 'company_share').reduce((sum, p) => sum + Number(p.amount), 0)
     + depositLedgerRows.reduce((sum, p) => sum + Number(p.amount), 0);
   const companyDue = (Number(booking.company_share_amt) || 0) + (Number(booking.construction_amount) || 0);
   const companyBalance = companyDue - companyPaid;
@@ -607,9 +629,13 @@ export default function BookingDetail() {
   // Landowner-wise ledger (JV only)
   const landownerLedger = landowners.map((lo) => {
     const due = (Number(booking.landowner_share_amt) * Number(lo.share_pct)) / 100;
-    const paid = payments
+    const directPaid = payments
       .filter((p) => p.payment_type === 'landowner_share' && p.landowner_id === lo.id)
       .reduce((sum, p) => sum + Number(p.amount), 0);
+    const splitPaid = splitLedgerRows
+      .filter((p) => p.payment_type === 'landowner_share' && p.landowner_id === lo.id)
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const paid = directPaid + splitPaid;
     return { ...lo, due, paid, balance: due - paid };
   });
 
@@ -712,6 +738,19 @@ export default function BookingDetail() {
             <div className="font-medium text-slate-700">{inr(booking.document_charge_amount)}</div>
           </div>
         </div>
+        {/* Guideline Value — informational, shown only when guideline_value_sqft is set */}
+        {booking.projects?.guideline_value_sqft && booking.plots?.area_sqft && (() => {
+          const glvRate  = Number(booking.projects.guideline_value_sqft)
+          const area     = Number(booking.plots.area_sqft)
+          const glvTotal = Math.round(glvRate * area)
+          return (
+            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Guideline Value (GLV)</span>
+              <span className="text-sm font-semibold text-slate-700">{inr(glvTotal)}</span>
+              <span className="text-xs text-slate-400">·  ₹{Number(glvRate).toLocaleString('en-IN')}/sqft  ·  {Number(area).toLocaleString('en-IN')} sqft</span>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Registration Details — only shown once at least one field is captured */}
@@ -899,6 +938,19 @@ export default function BookingDetail() {
             tone={companyBalance > 0 ? 'text-red-700' : 'text-green-700'}
           />
         </div>
+        {companyBalance > 0 && companyBalance <= maxWriteOff && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-xs text-slate-400">
+              Balance ₹{companyBalance.toLocaleString('en-IN')} is within the waiver limit (₹{maxWriteOff.toLocaleString('en-IN')})
+            </span>
+            <button
+              onClick={() => handleCustomerWriteOff(companyBalance)}
+              className="text-xs px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 rounded-lg hover:bg-amber-100"
+            >
+              Waive Balance
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Landowner-wise ledger */}
