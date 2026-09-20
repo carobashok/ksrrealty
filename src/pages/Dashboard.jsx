@@ -201,7 +201,7 @@ function FinancialSummaryTab() {
       const { data, error } = await supabase
         .schema('ksr')
         .from('projects')
-        .select('id, name, unit_of_measure')
+        .select('id, name, unit_of_measure, is_jv')
         .order('name');
       if (error) throw error;
       return data;
@@ -211,13 +211,13 @@ function FinancialSummaryTab() {
   // Fetch all plots
   const { data: plots = [], isLoading: loadingPlots } = useQuery({
     queryKey: ['financial-summary-plots', projectId],
+    enabled: !!projectId,
     queryFn: async () => {
       let q = supabase
         .schema('ksr')
         .from('plots')
-        .select('id, plot_number, facing, area_sqft, status, project_id')
-        .eq('plot_type', 'plot')
-        .order('plot_number');
+        .select('id, plot_number, area_sqft, status, project_id, base_price_sqft')
+        .eq('plot_type', 'plot');
       if (projectId) q = q.eq('project_id', projectId);
       const { data, error } = await q;
       if (error) throw error;
@@ -228,11 +228,12 @@ function FinancialSummaryTab() {
   // Fetch all bookings
   const { data: bookings = [], isLoading: loadingBookings } = useQuery({
     queryKey: ['financial-summary-bookings', projectId],
+    enabled: !!projectId,
     queryFn: async () => {
       let q = supabase
         .schema('ksr')
         .from('bookings')
-        .select('id, plot_id, project_id, status, registration_date, total_consideration, company_share_amt, landowner_share_amt, ksr_owes_landowner');
+        .select('id, plot_id, project_id, status, registration_date, total_consideration, company_share_amt, landowner_share_amt, ksr_owes_landowner, customers(name)');
       if (projectId) q = q.eq('project_id', projectId);
       const { data, error } = await q;
       if (error) throw error;
@@ -260,6 +261,7 @@ function FinancialSummaryTab() {
 
   // Build project lookup
   const projectMap = Object.fromEntries(projects.map(p => [p.id, p]));
+  const selectedProject = projectMap[projectId];
 
   // Build booking lookup by plot_id
   const bookingByPlot = Object.fromEntries(
@@ -306,7 +308,8 @@ function FinancialSummaryTab() {
     return {
       projectName: project.name || '',
       plotNo: plot.plot_number || '',
-      facing: plot.facing || '—',
+      customerName: booking?.customers?.name || '—',
+      ratePerSqft: plot.base_price_sqft ? Math.round(Number(plot.base_price_sqft)) : (booking?.total_consideration && plot.area_sqft ? Math.round(Number(booking.total_consideration) / Number(plot.area_sqft)) : null),
       areaDisplay,
       status: plot.status || '',
       totalConsideration,
@@ -325,29 +328,47 @@ function FinancialSummaryTab() {
 
   // CSV export
   const handleExport = () => {
-    const headers = [
-      'Project', 'Plot', 'Facing', 'Area',
-      'Total Consideration', 'KSR Share', 'KSR Received', 'KSR Pending',
-      'Landowner Share', 'Landowner Received', 'Landowner Pending',
-      'KSR Net Realisation', 'Reg Date', 'Booking Status', 'Plot Status'
+    const isJv = selectedProject?.is_jv;
+    const headers = ['Project', 'Plot', 'Customer', 'Rate/sqft', 'Area',
+      'Total Consid.', 'KSR Share', 'KSR Received', 'KSR Pending',
+      ...(isJv ? ['LO Share', 'LO Received', 'LO Pending'] : []),
     ];
     const csvRows = rows.map(r => [
-      r.projectName, r.plotNo, r.facing, r.areaDisplay,
+      r.projectName, r.plotNo, r.customerName, r.ratePerSqft || '—', r.areaDisplay,
       r.totalConsideration, r.ksrShare, r.ksrReceived, r.ksrPending,
-      r.landownerShare, r.landownerReceived, r.landownerPending,
-      r.ksrNetRealisation, r.regDate, r.bookingStatus, r.status
+      ...(isJv ? [r.landownerShare, r.landownerReceived, r.landownerPending] : []),
     ]);
-    const csv = [headers, ...csvRows]
-      .map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    // Add totals row
+    const totals = rows.reduce((acc, r) => ({
+      consideration: acc.consideration + r.totalConsideration,
+      ksrShare:      acc.ksrShare      + r.ksrShare,
+      ksrReceived:   acc.ksrReceived   + r.ksrReceived,
+      ksrPending:    acc.ksrPending    + r.ksrPending,
+      loShare:       acc.loShare       + r.landownerShare,
+      loReceived:    acc.loReceived    + r.landownerReceived,
+      loPending:     acc.loPending     + r.landownerPending,
+    }), { consideration:0, ksrShare:0, ksrReceived:0, ksrPending:0, loShare:0, loReceived:0, loPending:0 });
+    csvRows.push([
+      'TOTAL', `${rows.length} plots`, '', '', '',
+      totals.consideration, totals.ksrShare, totals.ksrReceived, totals.ksrPending,
+      ...(isJv ? [totals.loShare, totals.loReceived, totals.loPending] : []),
+    ]);
+    const csv = [headers, ...csvRows].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ksr-plot-financial-summary-${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `${selectedProject?.name || 'financial-summary'}-${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  };
+  };;
+
+  // Sort rows: project name then plot number (numeric-aware)
+  rows.sort((a, b) => {
+    const projCmp = a.projectName.localeCompare(b.projectName);
+    if (projCmp !== 0) return projCmp;
+    return a.plotNo.localeCompare(b.plotNo, undefined, { numeric: true, sensitivity: 'base' });
+  });
 
   const statusColor = (status) => {
     if (status === 'available') return 'text-green-700';
@@ -382,8 +403,53 @@ function FinancialSummaryTab() {
         <span className="text-sm text-slate-500 ml-auto">{rows.length} plots</span>
       </div>
 
+      {/* Summary cards */}
+      {projectId && !isLoading && rows.length > 0 && (() => {
+        const isJv = selectedProject?.is_jv
+        const totals = rows.reduce((acc, r) => ({
+          consideration: acc.consideration + r.totalConsideration,
+          ksrShare:      acc.ksrShare      + r.ksrShare,
+          ksrReceived:   acc.ksrReceived   + r.ksrReceived,
+          ksrPending:    acc.ksrPending    + r.ksrPending,
+          loShare:       acc.loShare       + r.landownerShare,
+          loReceived:    acc.loReceived    + r.landownerReceived,
+          loPending:     acc.loPending     + r.landownerPending,
+        }), { consideration:0, ksrShare:0, ksrReceived:0, ksrPending:0, loShare:0, loReceived:0, loPending:0 })
+
+        const cards = [
+          { label:'Total Consideration', value: totals.consideration, color:'text-slate-800' },
+          { label:'KSR Share',           value: totals.ksrShare,      color:'text-slate-800' },
+          { label:'KSR Received',        value: totals.ksrReceived,   color:'text-green-700' },
+          { label:'KSR Pending',         value: totals.ksrPending,    color: totals.ksrPending > 0 ? 'text-red-600' : 'text-green-700' },
+          ...(isJv ? [
+            { label:'LO Share',     value: totals.loShare,     color:'text-slate-800' },
+            { label:'LO Received',  value: totals.loReceived,  color:'text-green-700' },
+            { label:'LO Pending',   value: totals.loPending,   color: totals.loPending > 0 ? 'text-red-600' : 'text-green-700' },
+          ] : []),
+        ]
+        return (
+          <div className="grid gap-3 mb-4" style={{gridTemplateColumns:`repeat(${cards.length}, minmax(0,1fr))`}}>
+            {cards.map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-slate-200 p-3">
+                <div className="text-xs text-slate-400 mb-1">{c.label}</div>
+                <div className={`text-base font-semibold ${c.color}`}>{inr(c.value)}</div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
+      {/* Project heading */}
+      {projectId && selectedProject && (
+        <div className="mb-3 text-sm font-semibold text-slate-700">
+          {selectedProject.name} — {rows.length} plots
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        {isLoading ? (
+        {!projectId ? (
+          <div className="p-8 text-center text-slate-400">Select a project to view financial summary</div>
+        ) : isLoading ? (
           <div className="p-8 text-center text-slate-400">Loading financial summary...</div>
         ) : rows.length === 0 ? (
           <div className="p-8 text-center text-slate-400">No plots found</div>
@@ -391,17 +457,19 @@ function FinancialSummaryTab() {
           <table className="w-full text-sm min-w-[1400px]">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
               <tr>
-                <th className="text-left px-3 py-3 sticky left-0 bg-slate-50">Project</th>
                 <th className="text-left px-3 py-3">Plot</th>
-                <th className="text-left px-3 py-3">Facing</th>
+                <th className="text-left px-3 py-3">Customer</th>
+                <th className="text-right px-3 py-3">Rate/sqft</th>
                 <th className="text-right px-3 py-3">Area</th>
                 <th className="text-right px-3 py-3">Total Consid.</th>
                 <th className="text-right px-3 py-3 border-l border-slate-200">KSR Share</th>
                 <th className="text-right px-3 py-3">KSR Received</th>
                 <th className="text-right px-3 py-3">KSR Pending</th>
+                {selectedProject?.is_jv && <>
                 <th className="text-right px-3 py-3 border-l border-slate-200">LO Share</th>
                 <th className="text-right px-3 py-3">LO Received</th>
                 <th className="text-right px-3 py-3">LO Pending</th>
+                </>}
                 <th className="text-right px-3 py-3 border-l border-slate-200">KSR Net Real.</th>
                 <th className="text-center px-3 py-3">Reg Date</th>
                 <th className="text-center px-3 py-3">Status</th>
@@ -410,17 +478,19 @@ function FinancialSummaryTab() {
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className={`border-t border-slate-100 hover:bg-slate-50 ${!r.hasBooking ? 'text-slate-400' : ''}`}>
-                  <td className="px-3 py-2.5 font-medium text-slate-700 sticky left-0 bg-white">{r.projectName}</td>
                   <td className="px-3 py-2.5 font-medium text-[#0a1f44]">{r.plotNo}</td>
-                  <td className="px-3 py-2.5">{r.facing}</td>
+                  <td className="px-3 py-2.5">{r.customerName}</td>
+                  <td className="px-3 py-2.5 text-right">{r.ratePerSqft ? `₹${Number(r.ratePerSqft).toLocaleString('en-IN')}` : '—'}</td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">{r.areaDisplay}</td>
                   <td className="px-3 py-2.5 text-right font-medium">{r.hasBooking ? inr(r.totalConsideration) : '—'}</td>
                   <td className="px-3 py-2.5 text-right border-l border-slate-100">{r.hasBooking ? inr(r.ksrShare) : '—'}</td>
                   <td className="px-3 py-2.5 text-right text-green-700">{r.hasBooking ? inr(r.ksrReceived) : '—'}</td>
                   <td className="px-3 py-2.5 text-right text-red-600">{r.hasBooking ? inr(r.ksrPending) : '—'}</td>
+                  {selectedProject?.is_jv && <>
                   <td className="px-3 py-2.5 text-right border-l border-slate-100">{r.hasBooking && r.landownerShare > 0 ? inr(r.landownerShare) : '—'}</td>
                   <td className="px-3 py-2.5 text-right text-green-700">{r.hasBooking && r.landownerShare > 0 ? inr(r.landownerReceived) : '—'}</td>
                   <td className="px-3 py-2.5 text-right text-red-600">{r.hasBooking && r.landownerShare > 0 ? inr(r.landownerPending) : '—'}</td>
+                  </>}
                   <td className="px-3 py-2.5 text-right font-semibold text-[#0a1f44] border-l border-slate-100">{r.hasBooking ? inr(r.ksrNetRealisation) : '—'}</td>
                   <td className="px-3 py-2.5 text-center text-slate-600">{r.regDate || '—'}</td>
                   <td className={`px-3 py-2.5 text-center font-medium capitalize ${r.hasBooking ? statusColor(r.bookingStatus) : statusColor(r.status)}`}>
