@@ -333,10 +333,11 @@ function FinancialSummaryTab() {
       'Total Consid.', 'KSR Share', 'KSR Received', 'KSR Pending',
       ...(isJv ? ['LO Share', 'LO Received', 'LO Pending'] : []),
     ];
+    const dash = '';  // blank instead of em dash for Excel compatibility
     const csvRows = rows.map(r => [
-      r.projectName, r.plotNo, r.customerName, r.ratePerSqft || '—', r.areaDisplay,
-      r.totalConsideration, r.ksrShare, r.ksrReceived, r.ksrPending,
-      ...(isJv ? [r.landownerShare, r.landownerReceived, r.landownerPending] : []),
+      r.projectName, r.plotNo, r.customerName || dash, r.ratePerSqft || dash, r.areaDisplay,
+      r.totalConsideration || 0, r.ksrShare || 0, r.ksrReceived || 0, r.ksrPending || 0,
+      ...(isJv ? [r.landownerShare || 0, r.landownerReceived || 0, r.landownerPending || 0] : []),
     ]);
     // Add totals row
     const totals = rows.reduce((acc, r) => ({
@@ -353,8 +354,12 @@ function FinancialSummaryTab() {
       totals.consideration, totals.ksrShare, totals.ksrReceived, totals.ksrPending,
       ...(isJv ? [totals.loShare, totals.loReceived, totals.loPending] : []),
     ]);
-    const csv = [headers, ...csvRows].map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const escapeCSV = (v) => {
+      const s = String(v ?? '');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [headers, ...csvRows].map(r => r.map(escapeCSV).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
