@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Search, Download } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -46,9 +47,97 @@ export default function Dashboard() {
 }
 
 function OverviewTab() {
+  const { data: registrations = [], isLoading } = useQuery({
+    queryKey: ['monthly-registrations'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .schema('ksr')
+        .from('bookings')
+        .select('registration_date, projects(name)')
+        .eq('status', 'registered')
+        .not('registration_date', 'is', null)
+        .order('registration_date');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Group by month
+  const chartData = (() => {
+    const map = {};
+    registrations.forEach(b => {
+      const d = new Date(b.registration_date);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const label = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+      if (!map[key]) map[key] = { key, label, count: 0 };
+      map[key].count++;
+    });
+    return Object.values(map).sort((a,b) => a.key.localeCompare(b.key));
+  })();
+
+  const maxCount = Math.max(...chartData.map(d => d.count), 1);
+  const total = chartData.reduce((s,d) => s + d.count, 0);
+  const avgPerMonth = chartData.length ? (total / chartData.length).toFixed(1) : 0;
+  const peakMonth = chartData.reduce((a,b) => b.count > a.count ? b : a, { count: 0, label: '—' });
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">
-      More dashboard widgets coming soon.
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          ['Total Registered', total, 'text-slate-800'],
+          ['Monthly Average', avgPerMonth, 'text-blue-700'],
+          ['Peak Month', `${peakMonth.label} (${peakMonth.count})`, 'text-green-700'],
+        ].map(([label, value, color]) => (
+          <div key={label} className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="text-xs text-slate-400 mb-1">{label}</div>
+            <div className={`text-xl font-semibold ${color}`}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="text-sm font-semibold text-slate-700 mb-4">
+          Month-on-Month Registrations
+        </div>
+        {isLoading ? (
+          <div className="h-64 flex items-center justify-center text-slate-400">Loading...</div>
+        ) : chartData.length === 0 ? (
+          <div className="h-64 flex items-center justify-center text-slate-400">No registration data found</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
+              barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }}
+                axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }}
+                axisLine={false} tickLine={false} />
+              <Tooltip
+                cursor={{ fill: '#f8fafc' }}
+                content={({ active, payload, label }) => {
+                  if (!active || !payload?.length) return null;
+                  return (
+                    <div style={{background:'white',border:'1px solid #e2e8f0',borderRadius:'8px',padding:'8px 12px',fontSize:'13px'}}>
+                      <div style={{fontWeight:600,color:'#1B2A4A',marginBottom:'2px'}}>{label}</div>
+                      <div style={{color:'#4A7EB5'}}>{payload[0].value} plot{payload[0].value !== 1 ? 's' : ''} registered</div>
+                    </div>
+                  );
+                }}
+              />
+              <Bar dataKey="count" radius={[4,4,0,0]}>
+                {chartData.map((entry) => (
+                  <Cell
+                    key={entry.key}
+                    fill={entry.count === peakMonth.count ? '#1B2A4A' : '#4A7EB5'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
     </div>
   );
 }
