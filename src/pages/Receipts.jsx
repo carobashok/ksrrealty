@@ -62,7 +62,7 @@ export default function Receipts() {
         .schema('ksr')
         .from('payments')
         .select(`
-          id, payment_type, payment_date, amount, mode,
+          id, payment_type, payment_date, created_at, amount, mode,
           reference_no, notes, booking_id, landowner_id,
           is_split, receipt_no,
           bookings (
@@ -74,7 +74,7 @@ export default function Receipts() {
           project_landowners ( landowner_name )
         `)
         .eq('paid_by', 'plot_purchaser')
-        .order('payment_date', { ascending: false });
+        .order('created_at', { ascending: false });
       if (error) throw error;
       return data;
     },
@@ -257,6 +257,7 @@ export default function Receipts() {
                 <th className="text-left px-4 py-3">Mode</th>
                 <th className="text-left px-4 py-3">Reference</th>
                 <th className="text-right px-4 py-3">Amount</th>
+                <th className="text-left px-4 py-3 text-slate-400">Created</th>
               </tr>
             </thead>
             <tbody>
@@ -306,6 +307,14 @@ export default function Receipts() {
                           <div className="text-xs text-slate-400">of {inr(p.amount)}</div>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">
+                        {i === 0 && p.created_at ? (
+                          <>
+                            <div>{new Date(p.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</div>
+                            <div>{new Date(p.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true})}</div>
+                          </>
+                        ) : ''}
+                      </td>
                     </tr>
                   ))
                 }
@@ -332,6 +341,14 @@ export default function Receipts() {
                     <td className="px-4 py-3 text-slate-600">{modeLabel(p.mode) || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{p.reference_no || '—'}</td>
                     <td className="px-4 py-3 text-right font-medium text-slate-800">{inr(p.amount)}</td>
+                    <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">
+                      {p.created_at ? (
+                        <>
+                          <div>{new Date(p.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</div>
+                          <div>{new Date(p.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true})}</div>
+                        </>
+                      ) : '—'}
+                    </td>
                   </tr>
                 )
               })}
