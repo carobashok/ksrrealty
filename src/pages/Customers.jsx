@@ -267,6 +267,7 @@ export default function Customers() {
                 <th className="text-left px-4 py-3">Email</th>
                 <th className="text-left px-4 py-3">Address</th>
                 <th className="text-left px-4 py-3">PAN</th>
+                <th className="text-left px-4 py-3 text-slate-400">Created</th>
                 <th className="text-right px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -306,6 +307,14 @@ export default function Customers() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{c.pan || '—'}</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">
+                    {c.created_at ? (
+                      <>
+                        <div>{new Date(c.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</div>
+                        <div>{new Date(c.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true})}</div>
+                      </>
+                    ) : '—'}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <button
