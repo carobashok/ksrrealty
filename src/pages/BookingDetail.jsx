@@ -13,7 +13,6 @@ const PAYMENT_MODES = [
   { value: 'neft', label: 'NEFT' },
   { value: 'rtgs', label: 'RTGS' },
   { value: 'upi', label: 'UPI' },
-  { value: 'adjustment', label: 'Adjustment' },
   { value: 'dd', label: 'DD' },
   { value: 'imps', label: 'IMPS' },
 ];
