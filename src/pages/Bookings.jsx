@@ -30,6 +30,7 @@ export default function Bookings() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [showCancelled, setShowCancelled] = useState(false);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
   const [sortCol, setSortCol] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -132,6 +133,10 @@ export default function Bookings() {
       b.customers?.mobile?.toLowerCase().includes(q) ||
       b.plots?.plot_number?.toLowerCase().includes(q) ||
       b.projects?.name?.toLowerCase().includes(q);
+    if (showPendingOnly) {
+      const pending = Math.round((b.total_consideration || 0) - (paidTotals[b.id] || 0));
+      if (pending <= 0) return false;
+    }
     return matchesStatus && matchesSearch;
   });
 
@@ -147,6 +152,10 @@ export default function Bookings() {
         return dir * ((a.total_consideration || 0) - (b.total_consideration || 0))
       case 'total_paid':
         return dir * ((paidTotals[a.id] || 0) - (paidTotals[b.id] || 0))
+      case 'pending':
+        const pendA = Math.round((a.total_consideration || 0) - (paidTotals[a.id] || 0))
+        const pendB = Math.round((b.total_consideration || 0) - (paidTotals[b.id] || 0))
+        return dir * (pendA - pendB)
       case 'status':
         const sOrder = { registered:0, agreement_signed:1, booked:2, cancelled:3 }
         return dir * ((sOrder[a.status] ?? 9) - (sOrder[b.status] ?? 9))
@@ -207,6 +216,15 @@ export default function Bookings() {
           />
           Show Cancelled
         </label>
+        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showPendingOnly}
+            onChange={(e) => setShowPendingOnly(e.target.checked)}
+            className="rounded border-slate-300"
+          />
+          Pending Only
+        </label>
       </div>
 
       {/* Table */}
@@ -228,6 +246,7 @@ export default function Bookings() {
                   { col:'project',            label:'Project / Plot',       align:'left'  },
                   { col:'total_consideration',label:'Total Consideration',  align:'right' },
                   { col:'total_paid',         label:'Total Paid',           align:'right' },
+                  { col:'pending',            label:'Pending',              align:'right' },
                   { col:'status',             label:'Status',               align:'left'  },
                   { col:'booking_date',       label:'Booking Date',         align:'left'  },
                   { col:'created_at',         label:'Created Date',         align:'left'  },
@@ -266,6 +285,14 @@ export default function Bookings() {
                     {inr(b.total_consideration)}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-700">{inr(paidTotals[b.id])}</td>
+                  <td className="px-4 py-3 text-right">
+                    {(() => {
+                      const pending = Math.round((b.total_consideration || 0) - (paidTotals[b.id] || 0));
+                      if (b.status === 'cancelled') return <span className="text-slate-400">—</span>;
+                      if (pending <= 0) return <span className="text-green-600 font-medium">Paid</span>;
+                      return <span className="text-red-600 font-medium">{inr(pending)}</span>;
+                    })()}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-block px-2 py-0.5 rounded-full text-xs border ${

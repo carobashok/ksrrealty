@@ -309,7 +309,7 @@ export default function NewBooking() {
     const glvRate = Number(selectedProject.guideline_value_sqft) || 0;
 
     const landCostBeforeDiscount = isCentsProject
-      ? Math.round((Math.floor((area / CENTS_TO_SQFT) * 100) / 100) * effectiveRateCent) + premium
+      ? Math.round((area / CENTS_TO_SQFT) * effectiveRateCent) + premium
       : area * effectiveRate + premium;
     const landCost = landCostBeforeDiscount - discount;
     const glvTotal = area * glvRate;
@@ -327,7 +327,7 @@ export default function NewBooking() {
       // What KSR itself will separately owe the landowner later:
       // (plot area in Cents × Landowner Rate/Cent) − GLV already paid by the customer.
       const landownerRatePerCent = Number(selectedProject.landowner_rate_per_cent) || 0;
-      const areaCents = Math.floor((area / CENTS_TO_SQFT) * 100) / 100; // floor to 2dp
+      const areaCents = area / CENTS_TO_SQFT;
       ksrOwesLandowner = (areaCents * landownerRatePerCent) - glvTotal;
     }
 
@@ -770,7 +770,7 @@ export default function NewBooking() {
               />
               {isCentsProject && calc.area && (
                 <p className="text-xs text-amber-600 mt-1">
-                  Calculation uses: <span className="font-semibold">{(Math.floor((calc.area / CENTS_TO_SQFT) * 100) / 100)} Cents</span> (floor to 2dp) × Rate
+                  Calculation uses: <span className="font-semibold">{(calc.area / CENTS_TO_SQFT).toFixed(5)} Cents</span> (full precision) × Rate
                 </p>
               )}
             </Field>
