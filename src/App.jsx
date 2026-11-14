@@ -24,6 +24,7 @@ import Cancellations from './pages/Cancellations'
 import Documents from './pages/Documents'
 import ExcessPayments from './pages/ExcessPayments'
 import ProjectMap from './pages/ProjectMap'
+import MobileAnalytics from './pages/MobileAnalytics'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,6 +57,17 @@ export default function App() {
           <Toaster position="top-right" />
           <Routes>
             <Route path="/login" element={<Login />} />
+
+            {/* Mobile analytics — full screen, no sidebar layout */}
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute>
+                  <MobileAnalytics />
+                </ProtectedRoute>
+              }
+            />
+
             <Route
               path="/"
               element={
