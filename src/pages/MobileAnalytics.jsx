@@ -1,6 +1,6 @@
 // src/pages/MobileAnalytics.jsx
 // Mobile-first analytics dashboard for KSR Realty
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import {
@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, Cell,
 } from 'recharts';
 import {
-  LayoutGrid, IndianRupee, Clock, TrendingUp,
+  LayoutGrid, IndianRupee, Clock, TrendingUp, Map,
 } from 'lucide-react';
 
 const NAV = [
@@ -16,6 +16,7 @@ const NAV = [
   { id: 'collections', label: 'Collections', icon: IndianRupee },
   { id: 'pending',     label: 'Pending',     icon: Clock },
   { id: 'inventory',   label: 'Inventory',   icon: TrendingUp },
+  { id: 'map',         label: 'Map',         icon: Map },
 ];
 
 const inr = (n) =>
@@ -41,13 +42,17 @@ export default function MobileAnalytics() {
         <div className="text-xl font-bold">Analytics</div>
       </div>
 
-      {/* Content */}
-      <div className="px-4 pt-5">
-        {tab === 'overview'    && <OverviewTab />}
-        {tab === 'collections' && <CollectionsTab />}
-        {tab === 'pending'     && <PendingTab />}
-        {tab === 'inventory'   && <InventoryTab />}
-      </div>
+      {/* Content — map tab is full bleed, others get padding */}
+      {tab === 'map' ? (
+        <MapTab />
+      ) : (
+        <div className="px-4 pt-5">
+          {tab === 'overview'    && <OverviewTab />}
+          {tab === 'collections' && <CollectionsTab />}
+          {tab === 'pending'     && <PendingTab />}
+          {tab === 'inventory'   && <InventoryTab />}
+        </div>
+      )}
 
       {/* Bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex">
@@ -490,6 +495,165 @@ function InventoryTab() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   MAP
+───────────────────────────────────────────── */
+const STATUS_COLORS = {
+  available:  '#9ACD7A',
+  blocked:    '#E8A838',
+  booked:     '#4A7EB5',
+  registered: '#1B2A4A',
+};
+
+function MapTab() {
+  const mapRef   = useRef(null);
+  const mapObj   = useRef(null);
+  const layerRef = useRef(null);
+
+  const { data: projects = [], isLoading } = useQuery({
+    queryKey: ['mob-map-projects'],
+    queryFn: async () => {
+      const { data: projs, error: pErr } = await supabase.schema('ksr').from('projects')
+        .select('id, name, latitude, longitude, is_jv').order('name');
+      if (pErr) throw pErr;
+      const { data: plots, error: plErr } = await supabase.schema('ksr').from('plots')
+        .select('project_id, status').eq('plot_type', 'plot');
+      if (plErr) throw plErr;
+      return projs.map(p => ({ ...p, plots: plots.filter(pl => pl.project_id === p.id) }));
+    },
+  });
+
+  // Load Leaflet CSS + JS once
+  useEffect(() => {
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link');
+      link.id = 'leaflet-css'; link.rel = 'stylesheet';
+      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+      document.head.appendChild(link);
+    }
+    if (!document.getElementById('markercluster-css')) {
+      const link = document.createElement('link');
+      link.id = 'markercluster-css'; link.rel = 'stylesheet';
+      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css';
+      document.head.appendChild(link);
+    }
+    const loadScript = (id, src, cb) => {
+      if (document.getElementById(id)) { cb(); return; }
+      const s = document.createElement('script');
+      s.id = id; s.src = src; s.onload = cb;
+      document.head.appendChild(s);
+    };
+    loadScript('leaflet-js', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js', () => {
+      loadScript('markercluster-js',
+        'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js',
+        () => {
+          if (!mapObj.current && mapRef.current) {
+            const L = window.L;
+            const map = L.map(mapRef.current, { zoomControl: true }).setView([11.1271, 78.6569], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+              maxZoom: 19,
+            }).addTo(map);
+            mapObj.current = map;
+          }
+        }
+      );
+    });
+    return () => {
+      if (mapObj.current) { mapObj.current.remove(); mapObj.current = null; }
+    };
+  }, []);
+
+  // Add markers when projects load
+  useEffect(() => {
+    if (!mapObj.current || !projects.length) return;
+    const L = window.L;
+    if (!L) return;
+    if (layerRef.current) mapObj.current.removeLayer(layerRef.current);
+
+    const cluster = L.markerClusterGroup({ maxClusterRadius: 60, spiderfyOnMaxZoom: true, showCoverageOnHover: false });
+    const bounds = [];
+    const located = projects.filter(p => p.latitude && p.longitude);
+
+    located.forEach(proj => {
+      const plots  = Array.isArray(proj.plots) ? proj.plots : [];
+      const counts = { available: 0, blocked: 0, booked: 0, registered: 0 };
+      plots.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
+      const total    = plots.length;
+      const pct_sold = total > 0 ? ((counts.booked + counts.registered) / total) : 0;
+      const pinColor = pct_sold > 0.7 ? '#1B2A4A' : pct_sold > 0.3 ? '#4A7EB5' : '#9ACD7A';
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="background:${pinColor};color:white;border:2px solid white;border-radius:50% 50% 50% 0;width:32px;height:32px;transform:rotate(-45deg);box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
+          <span style="transform:rotate(45deg);font-size:12px;font-weight:700">${counts.available}</span>
+        </div>`,
+        iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -34],
+      });
+
+      const popup = `
+        <div style="font-family:system-ui,sans-serif;min-width:200px;">
+          <div style="font-weight:700;font-size:14px;color:#1B2A4A;margin-bottom:8px;">
+            ${proj.name}
+            ${proj.is_jv ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;margin-left:4px;">JV</span>' : ''}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px;">
+            ${Object.entries(counts).map(([status, count]) => `
+              <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;">
+                <span style="width:8px;height:8px;border-radius:2px;background:${STATUS_COLORS[status]};flex-shrink:0;"></span>
+                ${status.charAt(0).toUpperCase() + status.slice(1)}: <strong>${count}</strong>
+              </div>`).join('')}
+          </div>
+          <div style="font-size:11px;color:#94a3b8;">Total plots: ${total}</div>
+        </div>`;
+
+      L.marker([proj.latitude, proj.longitude], { icon })
+        .bindPopup(popup, { maxWidth: 240 })
+        .addTo(cluster);
+      bounds.push([proj.latitude, proj.longitude]);
+    });
+
+    mapObj.current.addLayer(cluster);
+    layerRef.current = cluster;
+
+    if (bounds.length === 0)      mapObj.current.setView([11.1271, 78.6569], 7);
+    else if (bounds.length === 1) mapObj.current.setView(bounds[0], 14);
+    else                          mapObj.current.fitBounds(bounds, { padding: [60, 80], maxZoom: 14 });
+  }, [projects]);
+
+  const unlocated = projects.filter(p => !p.latitude || !p.longitude);
+
+  return (
+    // Full bleed map — fills space between header and bottom nav
+    <div style={{ position: 'relative', height: 'calc(100vh - 120px)' }}>
+      {isLoading && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="w-8 h-8 border-2 border-[#0a1f44] border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+      <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+      {/* Legend */}
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 500, background: 'white', borderRadius: 10, padding: '8px 10px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', fontSize: 11 }}>
+        {[['Mostly free', '#9ACD7A'], ['Selling', '#4A7EB5'], ['Mostly sold', '#1B2A4A']].map(([l, c]) => (
+          <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: c, display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ color: '#475569' }}>{l}</span>
+          </div>
+        ))}
+        <div style={{ color: '#94a3b8', marginTop: 4 }}>Pin # = available plots</div>
+      </div>
+
+      {/* Unlocated warning */}
+      {unlocated.length > 0 && (
+        <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: 'white', borderRadius: 8, padding: '8px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', zIndex: 500, fontSize: 11, color: '#92400e', border: '1px solid #fde68a', whiteSpace: 'nowrap' }}>
+          ⚠ {unlocated.length} project{unlocated.length > 1 ? 's' : ''} not on map — add coordinates in Project settings
+        </div>
+      )}
     </div>
   );
 }
