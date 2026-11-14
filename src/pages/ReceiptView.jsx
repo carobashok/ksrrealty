@@ -37,8 +37,8 @@ export default function ReceiptView() {
           `
           id,
           customers ( name ),
-          projects ( name ),
-          plots ( plot_number, block )
+          projects ( name, unit_of_measure ),
+          plots ( plot_number, block, area_sqft )
         `
         )
         .eq('id', bookingId)
@@ -158,7 +158,7 @@ export default function ReceiptView() {
             )}
           </div>
           <div className="text-right text-sm text-slate-600">
-            <div>Receipt No: {payment.receipt_no || payment.id.slice(0, 8).toUpperCase()}</div>
+            <div>Receipt No: {payment.receipt_no || `KSR-2026-${payment.id.slice(0, 8).toUpperCase()}`}</div>
             <div>
               Date:{' '}
               {new Date(payment.payment_date).toLocaleDateString('en-GB')}
@@ -177,8 +177,29 @@ export default function ReceiptView() {
                 Towards
               </td>
               <td className="px-3 py-2 text-slate-800">
-                {booking?.projects?.name} · Plot {booking?.plots?.plot_number}
-                {booking?.plots?.block ? ` (${booking.plots.block})` : ''}
+                {booking?.projects?.name || '—'}
+              </td>
+            </tr>
+            <tr className="border-b border-slate-300">
+              <td className="px-3 py-2 font-medium text-slate-600 border-r border-slate-300">
+                Plot No
+              </td>
+              <td className="px-3 py-2 text-slate-800">
+                {booking?.plots?.plot_number
+                  ? `Plot ${booking.plots.plot_number}${booking.plots.block ? ` (${booking.plots.block})` : ''}`
+                  : '—'}
+              </td>
+            </tr>
+            <tr className="border-b border-slate-300">
+              <td className="px-3 py-2 font-medium text-slate-600 border-r border-slate-300">
+                Extent
+              </td>
+              <td className="px-3 py-2 text-slate-800">
+                {booking?.plots?.area_sqft
+                  ? booking?.projects?.unit_of_measure === 'cents'
+                    ? `${(booking.plots.area_sqft / 435.6).toFixed(2)} Cents`
+                    : `${booking.plots.area_sqft} Sq.ft`
+                  : '—'}
               </td>
             </tr>
             <tr className="border-b border-slate-300">

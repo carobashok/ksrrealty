@@ -324,6 +324,8 @@ function DetailsSection({ proj, projectId, qc }) {
 function LandownersSection({ proj, projectId, qc }) {
   const [adding, setAdding] = useState(false)
   const [newLO, setNewLO] = useState({ landowner_name:'', share_pct:'', bank_name:'', account_no:'', ifsc_code:'' })
+  const [editLOId, setEditLOId] = useState(null)
+  const [editLO, setEditLO] = useState({})
 
   const { data: landowners, refetch } = useQuery({
     queryKey: ['landowners', projectId],
@@ -349,6 +351,22 @@ function LandownersSection({ proj, projectId, qc }) {
       if (error) throw error
     },
     onSuccess: () => { toast.success('Landowner added'); refetch(); setAdding(false); setNewLO({ landowner_name:'', share_pct:'', bank_name:'', account_no:'', ifsc_code:'' }) },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const updateLO = useMutation({
+    mutationFn: async () => {
+      if (!editLO.landowner_name) throw new Error('Name is required')
+      const { error } = await supabase.from('project_landowners').update({
+        landowner_name: editLO.landowner_name,
+        share_pct: parseFloat(editLO.share_pct) || 0,
+        bank_name: editLO.bank_name || null,
+        account_no: editLO.account_no || null,
+        ifsc_code: editLO.ifsc_code || null,
+      }).eq('id', editLOId)
+      if (error) throw error
+    },
+    onSuccess: () => { toast.success('Landowner updated'); refetch(); setEditLOId(null) },
     onError: (e) => toast.error(e.message),
   })
 
@@ -395,12 +413,35 @@ function LandownersSection({ proj, projectId, qc }) {
             <span>Name</span><span>Share</span><span>Bank</span><span>Account / IFSC</span><span></span>
           </div>
           {landowners.map(lo => (
-            <div key={lo.id} style={{display:'grid',gridTemplateColumns:'1fr 70px 1fr 1fr 32px',gap:'8px',padding:'10px 0',borderBottom:'1px solid #f8fafc',fontSize:'13px',alignItems:'center'}}>
-              <span style={{fontWeight:500,color:'#1B2A4A'}}>{lo.landowner_name}</span>
-              <span style={{color:'#1B2A4A'}}>{lo.share_pct}%</span>
-              <span style={{color:'#64748b',fontSize:'12px'}}>{lo.bank_name || '—'}</span>
-              <span style={{color:'#64748b',fontSize:'12px'}}>{lo.account_no ? `${lo.account_no} / ${lo.ifsc_code||'—'}` : '—'}</span>
-              <button onClick={() => deleteLO(lo.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:0}}><Trash2 size={14}/></button>
+            <div key={lo.id}>
+              {editLOId === lo.id ? (
+                <div style={{background:'#f8fafc',borderRadius:'8px',padding:'12px',margin:'6px 0'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 80px',gap:'8px',marginBottom:'8px'}}>
+                    <div><div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Name *</div><input style={inp} value={editLO.landowner_name} onChange={e=>setEditLO(f=>({...f,landowner_name:e.target.value}))} /></div>
+                    <div><div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Share %</div><input style={inp} type="number" value={editLO.share_pct} onChange={e=>setEditLO(f=>({...f,share_pct:e.target.value}))} /></div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'10px'}}>
+                    <div><div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Bank</div><input style={inp} value={editLO.bank_name||''} onChange={e=>setEditLO(f=>({...f,bank_name:e.target.value}))} /></div>
+                    <div><div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>Account No.</div><input style={inp} value={editLO.account_no||''} onChange={e=>setEditLO(f=>({...f,account_no:e.target.value}))} /></div>
+                    <div><div style={{fontSize:'11px',color:'#64748b',marginBottom:'3px'}}>IFSC</div><input style={inp} value={editLO.ifsc_code||''} onChange={e=>setEditLO(f=>({...f,ifsc_code:e.target.value}))} /></div>
+                  </div>
+                  <div style={{display:'flex',gap:'8px'}}>
+                    <button onClick={() => updateLO.mutate()} disabled={updateLO.isPending} style={{padding:'6px 14px',background:'#1B2A4A',color:'white',border:'none',borderRadius:'6px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>{updateLO.isPending ? 'Saving…' : 'Save'}</button>
+                    <button onClick={() => setEditLOId(null)} style={{padding:'6px 14px',background:'white',color:'#64748b',border:'1px solid #e2e8f0',borderRadius:'6px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{display:'grid',gridTemplateColumns:'1fr 70px 1fr 1fr 60px',gap:'8px',padding:'10px 0',borderBottom:'1px solid #f8fafc',fontSize:'13px',alignItems:'center'}}>
+                  <span style={{fontWeight:500,color:'#1B2A4A'}}>{lo.landowner_name}</span>
+                  <span style={{color:'#1B2A4A'}}>{lo.share_pct}%</span>
+                  <span style={{color:'#64748b',fontSize:'12px'}}>{lo.bank_name || '—'}</span>
+                  <span style={{color:'#64748b',fontSize:'12px'}}>{lo.account_no ? `${lo.account_no} / ${lo.ifsc_code||'—'}` : '—'}</span>
+                  <div style={{display:'flex',gap:'6px'}}>
+                    <button onClick={() => { setEditLOId(lo.id); setEditLO({ landowner_name:lo.landowner_name, share_pct:lo.share_pct, bank_name:lo.bank_name||'', account_no:lo.account_no||'', ifsc_code:lo.ifsc_code||'' }) }} style={{background:'none',border:'none',cursor:'pointer',color:'#1B2A4A',padding:0}}><Pencil size={14}/></button>
+                    <button onClick={() => deleteLO(lo.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:0}}><Trash2 size={14}/></button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           <div style={{display:'flex',justifyContent:'space-between',padding:'10px 0',fontSize:'13px',fontWeight:600}}>
