@@ -326,9 +326,9 @@ function PendingTab() {
 
   if (lb || lpt) return <Loader />;
 
-  const projects = [...new Map(bookings.map(b => [b.projects?.id, b.projects?.name])).entries()]
+  const projectList = [...new globalThis.Map(bookings.map(b => [b.projects?.id, b.projects?.name])).entries()]
     .filter(([id]) => id)
-    .sort((a, b) => a[1]?.localeCompare(b[1]));
+    .sort((a, b) => (a[1] || '').localeCompare(b[1] || ''));
 
   const rows = bookings
     .map(b => ({
@@ -348,14 +348,14 @@ function PendingTab() {
       </div>
 
       {/* Project filter */}
-      {projects.length > 1 && (
+      {projectList.length > 1 && (
         <select
           value={projectFilter}
           onChange={e => setProjectFilter(e.target.value)}
           className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0a1f44]/30"
         >
           <option value="">All Projects</option>
-          {projects.map(([id, name]) => (
+          {projectList.map(([id, name]) => (
             <option key={id} value={id}>{name}</option>
           ))}
         </select>
@@ -665,17 +665,32 @@ function usePaidTotals() {
   return useQuery({
     queryKey: ['mob-paid-totals'],
     queryFn: async () => {
-      const [{ data: direct, error: e1 }, { data: splits, error: e2 }, { data: deposits, error: e3 }] =
-        await Promise.all([
-          supabase.schema('ksr').from('payments').select('booking_id, amount').neq('paid_by', 'ksr').not('booking_id', 'is', null),
-          supabase.schema('ksr').from('booking_payment_splits').select('booking_id, amount'),
-          supabase.schema('ksr').from('customer_deposits').select('applied_to_booking_id, amount').eq('status', 'applied').not('applied_to_booking_id', 'is', null),
-        ]);
-      if (e1) throw e1; if (e2) throw e2; if (e3) throw e3;
+      // 1. Direct payments — same logic as Bookings.jsx
+      const { data: direct, error: e1 } = await supabase
+        .schema('ksr').from('payments')
+        .select('booking_id, amount, paid_by')
+        .neq('paid_by', 'ksr')
+        .not('booking_id', 'is', null);
+      if (e1) throw e1;
+
+      // 2. Split payments
+      const { data: splits, error: e2 } = await supabase
+        .schema('ksr').from('booking_payment_splits')
+        .select('booking_id, amount');
+      if (e2) throw e2;
+
+      // 3. Applied deposits
+      const { data: deposits, error: e3 } = await supabase
+        .schema('ksr').from('customer_deposits')
+        .select('applied_to_booking_id, amount')
+        .eq('status', 'applied')
+        .not('applied_to_booking_id', 'is', null);
+      if (e3) throw e3;
+
       const totals = {};
-      direct.forEach(p => { totals[p.booking_id] = (totals[p.booking_id] || 0) + Number(p.amount); });
-      splits.forEach(s => { totals[s.booking_id] = (totals[s.booking_id] || 0) + Number(s.amount); });
-      deposits.forEach(d => { totals[d.applied_to_booking_id] = (totals[d.applied_to_booking_id] || 0) + Number(d.amount); });
+      (direct  || []).forEach(p => { totals[p.booking_id]              = (totals[p.booking_id]              || 0) + Number(p.amount); });
+      (splits  || []).forEach(s => { totals[s.booking_id]              = (totals[s.booking_id]              || 0) + Number(s.amount); });
+      (deposits|| []).forEach(d => { totals[d.applied_to_booking_id]   = (totals[d.applied_to_booking_id]   || 0) + Number(d.amount); });
       return totals;
     },
   });
