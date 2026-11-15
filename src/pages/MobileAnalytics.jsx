@@ -94,7 +94,17 @@ function OverviewTab() {
     queryKey: ['mob-plots'],
     queryFn: async () => {
       const { data, error } = await supabase.schema('ksr').from('plots')
-        .select('status').eq('plot_type', 'plot');
+        .select('status, project_id').eq('plot_type', 'plot');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: projects = [], isLoading: lpr } = useQuery({
+    queryKey: ['mob-overview-projects'],
+    queryFn: async () => {
+      const { data, error } = await supabase.schema('ksr').from('projects')
+        .select('id, status').neq('status', 'cancelled');
       if (error) throw error;
       return data;
     },
@@ -102,7 +112,7 @@ function OverviewTab() {
 
   const { data: paidTotals = {}, isLoading: lpt } = usePaidTotals();
 
-  if (lb || lp || lpt) return <Loader />;
+  if (lb || lp || lpr || lpt) return <Loader />;
 
   const totalSaleValue  = bookings.reduce((s, b) => s + (Number(b.total_consideration) || 0), 0);
   const totalCollected  = Object.values(paidTotals).reduce((s, v) => s + v, 0);
@@ -111,7 +121,14 @@ function OverviewTab() {
     return s + (p > 0 ? p : 0);
   }, 0);
 
-  const plotCounts = plots.reduce((acc, p) => {
+  // Split project ids by pipeline vs active/on_hold
+  const pipelineIds = new Set(projects.filter(p => p.status === 'pipeline').map(p => p.id));
+  const activeIds   = new Set(projects.filter(p => p.status !== 'pipeline').map(p => p.id));
+
+  const pipelinePlots = plots.filter(p => pipelineIds.has(p.project_id));
+  const activePlots   = plots.filter(p => activeIds.has(p.project_id));
+
+  const plotCounts = activePlots.reduce((acc, p) => {
     acc[p.status] = (acc[p.status] || 0) + 1;
     return acc;
   }, {});
@@ -140,12 +157,28 @@ function OverviewTab() {
         <MetricCard label="Total Sale Value"  value={inrCrore(totalSaleValue)}  sub={`${bookings.length} bookings`} color="blue" />
         <MetricCard label="Total Collected"   value={inrCrore(totalCollected)}  sub={`${Math.round(totalCollected / totalSaleValue * 100) || 0}% of total`} color="green" />
         <MetricCard label="Pending Amount"    value={inrCrore(totalPending)}    sub="to be collected" color="red" />
-        <MetricCard label="Plots Available"   value={plotCounts.available || 0} sub={`of ${plots.length} total`} color="amber" />
+        <MetricCard label="Plots Available"   value={plotCounts.available || 0} sub={`of ${activePlots.length} active plots`} color="amber" />
+      </div>
+
+      {/* Project breakdown cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Active / On Hold</div>
+          <div className="text-2xl font-bold text-[#0a1f44]">{activeIds.size}</div>
+          <div className="text-xs text-slate-500 mt-0.5">projects</div>
+          <div className="text-xs text-slate-400 mt-2">{activePlots.length} plots entered</div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">In Pipeline</div>
+          <div className="text-2xl font-bold text-slate-400">{pipelineIds.size}</div>
+          <div className="text-xs text-slate-500 mt-0.5">projects</div>
+          <div className="text-xs text-slate-400 mt-2">{pipelinePlots.length} plots entered</div>
+        </div>
       </div>
 
       {/* Plot status pills */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4">
-        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Plot Status</div>
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Plot Status — Active Projects</div>
         <div className="grid grid-cols-4 gap-2 text-center">
           {[
             { label: 'Available', count: plotCounts.available || 0, color: 'text-green-700 bg-green-50' },
@@ -444,7 +477,7 @@ function InventoryTab() {
         : 0;
       return { ...proj, ...counts, soldPct };
     })
-    .filter(r => r.status === 'active' || (r.status === 'on_hold' && (r.booked + r.registered) > 0));
+    .filter(r => r.status === 'active' || r.status === 'on_hold');
 
   const totals = rows.reduce(
     (acc, r) => ({
@@ -507,6 +540,153 @@ function InventoryTab() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   PROJECTS (planned vs entered + sales status)
+───────────────────────────────────────────── */
+function ProjectsTab() {
+  const { data: projects = [], isLoading: lp } = useQuery({
+    queryKey: ['mob-projects-tab'],
+    queryFn: async () => {
+      const { data, error } = await supabase.schema('ksr').from('projects')
+        .select('id, name, location, region, status, total_plots')
+        .in('status', ['active', 'on_hold', 'pipeline'])
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: plots = [], isLoading: lpl } = useQuery({
+    queryKey: ['mob-projects-tab-plots'],
+    queryFn: async () => {
+      const { data, error } = await supabase.schema('ksr').from('plots')
+        .select('project_id, status').eq('plot_type', 'plot');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  if (lp || lpl) return <Loader />;
+
+  const rows = projects
+    .map(proj => {
+      const pp = plots.filter(p => p.project_id === proj.id);
+      const entered = pp.length;
+      const planned = Number(proj.total_plots) || 0;
+      const pending_entry = Math.max(0, planned - entered);
+      const counts = { available: 0, booked: 0, registered: 0, blocked: 0 };
+      pp.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
+      const sold = counts.booked + counts.registered;
+      const soldPct = entered > 0 ? Math.round((sold / entered) * 100) : 0;
+      return { ...proj, entered, planned, pending_entry, ...counts, sold, soldPct };
+    })
+    .filter(r =>
+      r.status === 'active' ||
+      r.status === 'pipeline' ||
+      (r.status === 'on_hold' && r.sold > 0)
+    );
+
+  // Summary totals
+  const totals = rows.reduce((acc, r) => ({
+    planned:  acc.planned  + r.planned,
+    entered:  acc.entered  + r.entered,
+    available:acc.available+ r.available,
+    booked:   acc.booked   + r.booked,
+    registered:acc.registered + r.registered,
+  }), { planned: 0, entered: 0, available: 0, booked: 0, registered: 0 });
+
+  return (
+    <div className="space-y-4 pb-4">
+      {/* Summary row */}
+      <div className="grid grid-cols-2 gap-3">
+        <MetricCard
+          label="Total Planned"
+          value={totals.planned}
+          sub={`${totals.entered} entered · ${totals.planned - totals.entered} pending`}
+          color="blue"
+        />
+        <MetricCard
+          label="Total Sold"
+          value={totals.booked + totals.registered}
+          sub={`${totals.available} still available`}
+          color="green"
+        />
+      </div>
+
+      {/* Per-project cards */}
+      {rows.map(r => (
+        <div key={r.id} className="bg-white rounded-2xl border border-slate-200 p-4">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-3">
+            <div className="flex-1 mr-2">
+              <div className="font-semibold text-slate-800 text-sm leading-tight">{r.name}</div>
+              {(r.location || r.region) && (
+                <div className="text-xs text-slate-400 mt-0.5">{r.location || r.region}</div>
+              )}
+            </div>
+            <div className="flex gap-1.5 flex-shrink-0">
+              {r.status === 'pipeline' && (
+                <span className="text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-300 px-2 py-0.5 rounded-full">
+                  In Pipeline
+                </span>
+              )}
+              {r.status === 'on_hold' && (
+                <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+                  On Hold
+                </span>
+              )}
+              {r.status !== 'pipeline' && (
+                <span className="text-[10px] font-semibold bg-blue-50 text-[#0a1f44] px-2 py-0.5 rounded-full">
+                  {r.soldPct}% sold
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Planned vs Entered */}
+          <div className="bg-slate-50 rounded-xl px-3 py-2 mb-3">
+            <div className="flex justify-between text-xs mb-1.5">
+              <span className="text-slate-500 font-medium">Plot Entry Status</span>
+              <span className={r.pending_entry > 0 ? 'text-amber-600 font-semibold' : 'text-green-600 font-semibold'}>
+                {r.pending_entry > 0 ? `⚠ ${r.pending_entry} pending` : '✓ All entered'}
+              </span>
+            </div>
+            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#0a1f44] rounded-full transition-all"
+                style={{ width: r.planned > 0 ? `${Math.min(100, (r.entered / r.planned) * 100)}%` : '0%' }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+              <span>{r.entered} entered</span>
+              <span>{r.planned} planned</span>
+            </div>
+          </div>
+
+          {/* Sales progress bar */}
+          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-2">
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${r.soldPct}%`,
+                background: r.soldPct >= 80 ? '#16a34a' : r.soldPct >= 50 ? '#4A7EB5' : '#f59e0b',
+              }}
+            />
+          </div>
+
+          {/* Status counts */}
+          <div className="grid grid-cols-4 gap-1 text-center text-[11px]">
+            <div><span className="font-semibold text-green-700">{r.available}</span><br /><span className="text-slate-400">Free</span></div>
+            <div><span className="font-semibold text-blue-700">{r.booked}</span><br /><span className="text-slate-400">Booked</span></div>
+            <div><span className="font-semibold text-slate-700">{r.registered}</span><br /><span className="text-slate-400">Reg'd</span></div>
+            <div><span className="font-semibold text-amber-700">{r.blocked}</span><br /><span className="text-slate-400">Blocked</span></div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

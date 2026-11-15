@@ -1347,10 +1347,11 @@ export default function ProjectDetail() {
   const STATUS_STYLES = {
     active:      { background:'#dcfce7', color:'#166534' },
     on_hold:     { background:'#fef3c7', color:'#92400e' },
+    pipeline:    { background:'#f1f5f9', color:'#475569' },
     completed:   { background:'#dbeafe', color:'#1e40af' },
   }
   const STATUS_LABELS = {
-    active: 'Active', on_hold: 'On Hold', completed: 'Completed',
+    active: 'Active', on_hold: 'On Hold', pipeline: 'In Pipeline', completed: 'Completed',
   }
 
   const changeStatus = useMutation({
