@@ -193,31 +193,38 @@ function OverviewTab() {
    COLLECTIONS
 ───────────────────────────────────────────── */
 function CollectionsTab() {
-  const { data: payments = [], isLoading } = useQuery({
+  // Direct payments — for mode breakdown and monthly trend
+  const { data: payments = [], isLoading: lp } = useQuery({
     queryKey: ['mob-payments-all'],
     queryFn: async () => {
       const { data, error } = await supabase.schema('ksr').from('payments')
-        .select('amount, payment_date, mode, payment_type, paid_by')
+        .select('id, amount, payment_date, mode, paid_by, booking_id')
         .neq('paid_by', 'ksr')
+        .not('booking_id', 'is', null)
         .order('payment_date', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
-  if (isLoading) return <Loader />;
+  // Paid totals (same 3-source logic as Overview) — for grand total figure only
+  const { data: paidTotals = {}, isLoading: lpt } = usePaidTotals();
 
-  // This month
+  if (lp || lpt) return <Loader />;
+
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
-  const thisMonthAmt  = payments.filter(p => p.payment_date?.startsWith(thisMonth)).reduce((s, p) => s + Number(p.amount), 0);
-  const lastMonthAmt  = payments.filter(p => p.payment_date?.startsWith(lastMonth)).reduce((s, p) => s + Number(p.amount), 0);
-  const totalCollected = payments.reduce((s, p) => s + Number(p.amount), 0);
+  // Grand total from paidTotals (matches Overview exactly)
+  const totalCollected = Object.values(paidTotals).reduce((s, v) => s + v, 0);
 
-  // Mode-wise
+  // This month / last month — from direct payments (best approximation with dates)
+  const thisMonthAmt = payments.filter(p => p.payment_date?.startsWith(thisMonth)).reduce((s, p) => s + Number(p.amount), 0);
+  const lastMonthAmt = payments.filter(p => p.payment_date?.startsWith(lastMonth)).reduce((s, p) => s + Number(p.amount), 0);
+
+  // Mode-wise breakdown — direct payments only (splits/deposits have no mode)
   const byMode = payments.reduce((acc, p) => {
     const m = p.mode || 'other';
     acc[m] = (acc[m] || 0) + Number(p.amount);
@@ -226,8 +233,9 @@ function CollectionsTab() {
   const modeData = Object.entries(byMode)
     .map(([mode, amount]) => ({ mode: mode.toUpperCase(), amount }))
     .sort((a, b) => b.amount - a.amount);
+  const modeTotal = modeData.reduce((s, m) => s + m.amount, 0);
 
-  // Last 6 months trend
+  // Last 6 months trend — direct payments
   const months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
     return {
@@ -286,7 +294,7 @@ function CollectionsTab() {
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Payment Mode Breakdown</div>
         <div className="space-y-2.5">
           {modeData.map(({ mode, amount }) => {
-            const pct = totalCollected > 0 ? (amount / totalCollected) * 100 : 0;
+            const pct = modeTotal > 0 ? (amount / modeTotal) * 100 : 0;
             return (
               <div key={mode}>
                 <div className="flex justify-between text-sm mb-1">
@@ -406,7 +414,9 @@ function InventoryTab() {
     queryKey: ['mob-inv-projects'],
     queryFn: async () => {
       const { data, error } = await supabase.schema('ksr').from('projects')
-        .select('id, name, location, region').order('name');
+        .select('id, name, location, region, status')
+        .in('status', ['active', 'on_hold'])
+        .order('name');
       if (error) throw error;
       return data;
     },
@@ -424,15 +434,17 @@ function InventoryTab() {
 
   if (lp || lpl) return <Loader />;
 
-  const rows = projects.map(proj => {
-    const pp = plots.filter(p => p.project_id === proj.id);
-    const counts = { total: pp.length, available: 0, booked: 0, registered: 0, blocked: 0 };
-    pp.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
-    const soldPct = counts.total > 0
-      ? Math.round(((counts.booked + counts.registered) / counts.total) * 100)
-      : 0;
-    return { ...proj, ...counts, soldPct };
-  });
+  const rows = projects
+    .map(proj => {
+      const pp = plots.filter(p => p.project_id === proj.id);
+      const counts = { total: pp.length, available: 0, booked: 0, registered: 0, blocked: 0 };
+      pp.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
+      const soldPct = counts.total > 0
+        ? Math.round(((counts.booked + counts.registered) / counts.total) * 100)
+        : 0;
+      return { ...proj, ...counts, soldPct };
+    })
+    .filter(r => r.status === 'active' || (r.status === 'on_hold' && (r.booked + r.registered) > 0));
 
   const totals = rows.reduce(
     (acc, r) => ({
